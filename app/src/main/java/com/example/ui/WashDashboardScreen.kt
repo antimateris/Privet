@@ -28,6 +28,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Clear
@@ -255,13 +256,13 @@ fun WashDashboardScreen(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Ekspor Laporan (CSV / Excel)") },
-                            leadingIcon = { Icon(Icons.Default.TableChart, contentDescription = null, tint = Color(0xFF15803D)) },
+                            text = { Text("Laporan Resmi PT (PDF / CSV)") },
+                            leadingIcon = { Icon(Icons.Default.Business, contentDescription = null, tint = Color(0xFF0F172A)) },
                             onClick = {
                                 showMenu = false
                                 showExportDialog = true
                             },
-                            modifier = Modifier.testTag("menu_export_csv")
+                            modifier = Modifier.testTag("menu_export_corporate")
                         )
 
                         DropdownMenuItem(
@@ -865,7 +866,11 @@ fun WashDashboardScreen(
                     }
                 }
             } else {
-                items(filteredRecords, key = { it.id }) { record ->
+                items(
+                    items = filteredRecords,
+                    key = { it.id },
+                    contentType = { "transaction_card" }
+                ) { record ->
                     TransactionItemCard(
                         record = record,
                         onEdit = {

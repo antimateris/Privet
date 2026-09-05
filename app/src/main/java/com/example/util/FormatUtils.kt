@@ -18,39 +18,68 @@ enum class TimePeriod(val title: String) {
 object FormatUtils {
     private val idLocale = Locale("in", "ID")
 
-    fun formatRupiah(amount: Long): String {
+    private val rupiahFormatThreadLocal = ThreadLocal.withInitial {
         val formatter = NumberFormat.getCurrencyInstance(idLocale)
         formatter.maximumFractionDigits = 0
+        formatter
+    }
+
+    private val timeFormatThreadLocal = ThreadLocal.withInitial {
+        SimpleDateFormat("HH:mm", idLocale)
+    }
+
+    private val dateShortThreadLocal = ThreadLocal.withInitial {
+        SimpleDateFormat("dd MMM, HH:mm", idLocale)
+    }
+
+    private val dateMediumThreadLocal = ThreadLocal.withInitial {
+        SimpleDateFormat("d MMM yyyy", idLocale)
+    }
+
+    private val dateFullThreadLocal = ThreadLocal.withInitial {
+        SimpleDateFormat("EEEE, d MMMM yyyy", idLocale)
+    }
+
+    private val monthYearThreadLocal = ThreadLocal.withInitial {
+        SimpleDateFormat("MMMM yyyy", idLocale)
+    }
+
+    private val dayNameThreadLocal = ThreadLocal.withInitial {
+        SimpleDateFormat("EEEE", idLocale)
+    }
+
+    fun formatRupiah(amount: Long): String {
+        val formatter = rupiahFormatThreadLocal.get() ?: NumberFormat.getCurrencyInstance(idLocale).apply { maximumFractionDigits = 0 }
         return formatter.format(amount).replace("Rp", "Rp ").trim()
     }
 
     fun formatTime(timestamp: Long): String {
-        val sdf = SimpleDateFormat("HH:mm", idLocale)
+        val sdf = timeFormatThreadLocal.get() ?: SimpleDateFormat("HH:mm", idLocale)
         return sdf.format(Date(timestamp))
     }
 
     fun formatDateShort(timestamp: Long): String {
-        val sdf = SimpleDateFormat("dd MMM, HH:mm", idLocale)
+        val sdf = dateShortThreadLocal.get() ?: SimpleDateFormat("dd MMM, HH:mm", idLocale)
         return sdf.format(Date(timestamp))
     }
 
     fun formatDateMedium(timestamp: Long): String {
-        val sdf = SimpleDateFormat("d MMM yyyy", idLocale)
+        val sdf = dateMediumThreadLocal.get() ?: SimpleDateFormat("d MMM yyyy", idLocale)
         return sdf.format(Date(timestamp))
     }
 
     fun formatDateFull(timestamp: Long): String {
-        val sdf = SimpleDateFormat("EEEE, d MMMM yyyy", idLocale)
+        val sdf = dateFullThreadLocal.get() ?: SimpleDateFormat("EEEE, d MMMM yyyy", idLocale)
         return sdf.format(Date(timestamp))
     }
 
     fun formatMonthYear(timestamp: Long): String {
-        val sdf = SimpleDateFormat("MMMM yyyy", idLocale)
+        val sdf = monthYearThreadLocal.get() ?: SimpleDateFormat("MMMM yyyy", idLocale)
         return sdf.format(Date(timestamp))
     }
 
     fun formatDayName(timestamp: Long): String {
-        val sdf = SimpleDateFormat("EEEE", idLocale)
+        val sdf = dayNameThreadLocal.get() ?: SimpleDateFormat("EEEE", idLocale)
         return sdf.format(Date(timestamp))
     }
 

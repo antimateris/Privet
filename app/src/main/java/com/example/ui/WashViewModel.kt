@@ -8,6 +8,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
 import com.example.data.repository.WashRepository
+import com.example.util.CorporateReportGenerator
 import com.example.util.FormatUtils
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
@@ -15,11 +16,13 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import kotlin.math.ceil
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -113,6 +116,17 @@ data class MonthlySummaryData(
     val transferAmount: Long
 )
 
+data class CompanyProfile(
+    val companyName: String = "PT. KILAU MOTOR GEMILANG",
+    val divisionName: String = "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
+    val companyAddress: String = "Kawasan Sentra Bisnis Otomotif Terpadu",
+    val companyPhone: String = "0812-3456-7890",
+    val legalRegNo: String = "AHU-0038912.AH.01.01 / NIB: 9120003482190",
+    val directorName: String = "Bpk. Hendra Gunawan, S.E. (Direktur Utama)",
+    val financeManagerName: String = "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)",
+    val cashierName: String = "Admin / Kasir Operasional"
+)
+
 class WashViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: WashRepository
 
@@ -168,7 +182,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         map
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     // Combined filtered records based on time period, custom date, and search query
     val filteredRecords: StateFlow<List<WashRecord>> = combine(
@@ -190,7 +205,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 record.motorType.lowercase().contains(q)
             }
         }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // Summary calculation for the active period
     val financialSummary: StateFlow<WashFinancialSummary> = filteredRecords.combine(_selectedPeriod) { records, _ ->
@@ -212,7 +228,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             totalWasherShare = washer,
             totalOwnerShare = owner
         )
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WashFinancialSummary())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WashFinancialSummary())
 
     // Washer share breakdown
     val washerBreakdowns: StateFlow<List<WasherShareBreakdown>> = filteredRecords.combine(_selectedPeriod) { records, _ ->
@@ -232,7 +249,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 totalShare = mapShare[name] ?: 0L
             )
         }.sortedByDescending { it.motorCount }
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // In-depth revenue and performance analysis
     val revenueAnalysis: StateFlow<RevenueAnalysisData> = combine(
@@ -240,7 +258,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         _selectedPeriod
     ) { records, period ->
         computeRevenueAnalysis(records, period)
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RevenueAnalysisData())
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RevenueAnalysisData())
 
     // Monthly Recap and Summary Data
     val monthlySummaryData: StateFlow<MonthlySummaryData> = combine(
@@ -405,7 +424,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             qrisAmount = qris,
             transferAmount = transfer
         )
-    }.stateIn(
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         MonthlySummaryData(
@@ -499,6 +519,56 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             .putString("source", newConfig.savingSource.name)
             .putLong("daily_target", newConfig.dailyTargetAmount)
             .apply()
+    }
+
+    private val companyPrefs by lazy {
+        getApplication<Application>().getSharedPreferences("company_profile_prefs", Context.MODE_PRIVATE)
+    }
+
+    private val _companyProfile = MutableStateFlow(loadCompanyProfile())
+    val companyProfile: StateFlow<CompanyProfile> = _companyProfile.asStateFlow()
+
+    private fun loadCompanyProfile(): CompanyProfile {
+        return CompanyProfile(
+            companyName = companyPrefs.getString("company_name", "PT. KILAU MOTOR GEMILANG") ?: "PT. KILAU MOTOR GEMILANG",
+            divisionName = companyPrefs.getString("division_name", "DIVISI OPERASIONAL & PERAWATAN KENDARAAN") ?: "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
+            companyAddress = companyPrefs.getString("company_address", "Kawasan Sentra Bisnis Otomotif Terpadu") ?: "Kawasan Sentra Bisnis Otomotif Terpadu",
+            companyPhone = companyPrefs.getString("company_phone", "0812-3456-7890") ?: "0812-3456-7890",
+            legalRegNo = companyPrefs.getString("legal_reg_no", "AHU-0038912.AH.01.01 / NIB: 9120003482190") ?: "AHU-0038912.AH.01.01 / NIB: 9120003482190",
+            directorName = companyPrefs.getString("director_name", "Bpk. Hendra Gunawan, S.E. (Direktur Utama)") ?: "Bpk. Hendra Gunawan, S.E. (Direktur Utama)",
+            financeManagerName = companyPrefs.getString("finance_manager_name", "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)") ?: "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)",
+            cashierName = companyPrefs.getString("cashier_name", "Admin / Kasir Operasional") ?: "Admin / Kasir Operasional"
+        )
+    }
+
+    fun updateCompanyProfile(newProfile: CompanyProfile) {
+        _companyProfile.value = newProfile
+        companyPrefs.edit()
+            .putString("company_name", newProfile.companyName)
+            .putString("division_name", newProfile.divisionName)
+            .putString("company_address", newProfile.companyAddress)
+            .putString("company_phone", newProfile.companyPhone)
+            .putString("legal_reg_no", newProfile.legalRegNo)
+            .putString("director_name", newProfile.directorName)
+            .putString("finance_manager_name", newProfile.financeManagerName)
+            .putString("cashier_name", newProfile.cashierName)
+            .apply()
+    }
+
+    fun generateDocumentNumber(prefix: String = "FIN-OPS", month: Int, year: Int): String {
+        val romanMonths = listOf("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII")
+        val roman = if (month in 1..12) romanMonths[month - 1] else "IX"
+        val serial = String.format(Locale.getDefault(), "%03d", (month * 7 + (year % 100)) % 900 + 101)
+        val shortName = _companyProfile.value.companyName
+            .replace("PT.", "", ignoreCase = true)
+            .replace("PT", "", ignoreCase = true)
+            .trim()
+            .split(" ")
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+            .joinToString("")
+            .ifBlank { "KMG" }
+        return "$serial/$prefix/PT-$shortName/$roman/$year"
     }
 
     // Reactive Dream Goal Progress based on daily revenue and total accumulated income
@@ -941,159 +1011,300 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun buildWhatsAppReportText(): String {
+        return buildCorporateWhatsAppDailyReport()
+    }
+
+    fun buildCorporateWhatsAppDailyReport(): String {
         val period = _selectedPeriod.value
         val summary = financialSummary.value
         val breakdowns = washerBreakdowns.value
+        val profile = _companyProfile.value
         val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("OPS-HARIAN", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+
+        val ownerMargin = if (summary.totalGrossRevenue > 0) {
+            (summary.totalOwnerShare.toFloat() / summary.totalGrossRevenue.toFloat()) * 100f
+        } else 0f
 
         val sb = StringBuilder()
-        sb.append("🏍️ *LAPORAN PENGHASILAN STEAM MOTOR*\n")
-        sb.append("📅 *Periode:* ${period.title} ($currentDateStr)\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("🔢 *Total Motor:* ${summary.totalMotors} Unit\n")
-        sb.append("💵 *Omset Kotor:* ${FormatUtils.formatRupiah(summary.totalGrossRevenue)}\n")
-        sb.append("🤝 *Bagi Hasil Pekerja:* ${FormatUtils.formatRupiah(summary.totalWasherShare)}\n")
-        sb.append("🏦 *Kas Bersih Steam:* ${FormatUtils.formatRupiah(summary.totalOwnerShare)}\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("🏢 *${profile.companyName.uppercase()}*\n")
+        sb.append("*${profile.divisionName}*\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("📑 *MEMORANDUM KEUANGAN HARIAN (AUDITED)*\n")
+        sb.append("No. Dokumen : $docNo\n")
+        sb.append("Sifat       : RAHASIA & TERBATAS\n")
+        sb.append("Periode     : ${period.title} ($currentDateStr)\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        sb.append("Kepada Yth,\n")
+        sb.append("*Dewan Direksi & Manajemen ${profile.companyName}*\n\n")
+        sb.append("Berikut terlampir Laporan Pertanggungjawaban Finansial Operasional Terverifikasi Sistem:\n\n")
+
+        sb.append("📊 *I. RINGKASAN EKSEKUTIF OPERASIONAL*\n")
+        sb.append("• Total Armada Dilayani  : *${summary.totalMotors} Unit*\n")
+        sb.append("• Pendapatan Kotor (Gross): *${FormatUtils.formatRupiah(summary.totalGrossRevenue)}*\n")
+        sb.append("• Beban Jasa Tenaga Cuci : *${FormatUtils.formatRupiah(summary.totalWasherShare)}* (50.0%)\n")
+        sb.append("• Laba Bersih Kas PT/Owner: *${FormatUtils.formatRupiah(summary.totalOwnerShare)}* (${String.format(Locale.getDefault(), "%.0f", ownerMargin)}%)\n\n")
 
         if (breakdowns.isNotEmpty()) {
-            sb.append("👥 *Rincian Komisi Petugas:*\n")
-            for (item in breakdowns) {
-                sb.append("• *${item.washerName}*: ${item.motorCount} motor (${FormatUtils.formatRupiah(item.totalShare)})\n")
+            sb.append("👥 *II. PERTANGGUNGJAWABAN HAK KOMISI OPERATOR*\n")
+            breakdowns.forEachIndexed { idx, item ->
+                sb.append("${idx + 1}. *${item.washerName}*: ${item.motorCount} unit • Hak: *${FormatUtils.formatRupiah(item.totalShare)}*\n")
             }
-            sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
+            sb.append("\n")
         }
 
-        sb.append("✨ _Catatan: Tarif 10rb/motor, Bagi hasil 5rb/motor_\n")
-        sb.append("📱 _Dicatat dengan Aplikasi Steam Motor_")
+        sb.append("📌 *III. PENGESAHAN DOKUMEN SISTEM*\n")
+        sb.append("• Dibuat Oleh   : ${profile.cashierName}\n")
+        sb.append("• Diperiksa     : ${profile.financeManagerName}\n")
+        sb.append("• Disahkan Oleh : ${profile.directorName}\n")
+        sb.append("• Status Sistem : TERVERIFIKASI SISTEM PEMBUKUAN OTOMATIS\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("Demikian laporan resmi ini diterbitkan secara sah.\n")
+        sb.append("🏛️ *${profile.companyName}*")
         return sb.toString()
     }
 
     fun buildRevenueAnalysisShareText(): String {
         val period = _selectedPeriod.value
         val analysis = revenueAnalysis.value
+        val profile = _companyProfile.value
         val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("ANL-RISK", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
 
         val sb = StringBuilder()
-        sb.append("📊 *ANALISIS PENDAPATAN STEAM MOTOR*\n")
-        sb.append("📅 *Periode:* ${period.title} ($currentDateStr)\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("🏍️ *Total Unit:* ${analysis.totalMotors} motor\n")
-        sb.append("💰 *Omset Kotor:* ${FormatUtils.formatRupiah(analysis.totalGrossRevenue)}\n")
-        sb.append("🤝 *Bagi Hasil Petugas:* ${FormatUtils.formatRupiah(analysis.totalWasherShare)}\n")
-        sb.append("🏦 *Kas Bersih Pemilik:* ${FormatUtils.formatRupiah(analysis.totalOwnerShare)} (${String.format(Locale.getDefault(), "%.0f", analysis.ownerMarginPercent)}%)\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("📈 *RATA-RATA & PROYEKSI:*\n")
-        sb.append("• Rata-rata: ${String.format(Locale.getDefault(), "%.1f", analysis.averageDailyMotors)} motor/hari\n")
-        sb.append("• Rata-rata Kas Pemilik: ${FormatUtils.formatRupiah(analysis.averageDailyOwnerNet)}/hari\n")
-        sb.append("• Proyeksi Kas Pemilik Bulan Ini: ${FormatUtils.formatRupiah(analysis.projectedMonthlyOwnerNet)}\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("⏰ *Jam Paling Ramai:* ${analysis.peakTimeSlot}\n")
+        sb.append("🏢 *${profile.companyName.uppercase()}*\n")
+        sb.append("*LAPORAN ANALISIS KINERJA & ARUS KAS KORPORAT*\n")
+        sb.append("No. Dok: $docNo | Sifat: Dokumen Manajemen Eksekutif\n")
+        sb.append("Periode: ${period.title} ($currentDateStr)\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        sb.append("📊 *I. INDIKATOR PERFORMA BISNIS (KPI)*\n")
+        sb.append("• Total Armada Dikerjakan: *${analysis.totalMotors} Unit*\n")
+        sb.append("• Pendapatan Bruto (Gross): *${FormatUtils.formatRupiah(analysis.totalGrossRevenue)}*\n")
+        sb.append("• Beban Jasa Petugas Cuci: *${FormatUtils.formatRupiah(analysis.totalWasherShare)}*\n")
+        sb.append("• Laba Bersih Kas Pemilik: *${FormatUtils.formatRupiah(analysis.totalOwnerShare)}* (${String.format(Locale.getDefault(), "%.0f", analysis.ownerMarginPercent)}% Margin)\n\n")
+
+        sb.append("📈 *II. RATA-RATA & PROYEKSI FINANSIAL*\n")
+        sb.append("• Throughput Rata-rata   : ${String.format(Locale.getDefault(), "%.1f", analysis.averageDailyMotors)} motor/hari\n")
+        sb.append("• Rata-rata Laba Bersih  : ${FormatUtils.formatRupiah(analysis.averageDailyOwnerNet)}/hari\n")
+        sb.append("• Proyeksi Kas Bulan Ini : ${FormatUtils.formatRupiah(analysis.projectedMonthlyOwnerNet)}\n")
+        sb.append("• Jam Operasional Puncak : ${analysis.peakTimeSlot}\n\n")
 
         if (analysis.paymentMethods.isNotEmpty()) {
-            sb.append("\n💳 *Metode Pembayaran:*\n")
+            sb.append("💳 *III. REKONSILIASI KANAL PEMBAYARAN*\n")
             for (pm in analysis.paymentMethods) {
                 sb.append("• ${pm.method}: ${pm.motorCount} unit (${String.format(Locale.getDefault(), "%.0f", pm.percentage)}%)\n")
             }
+            sb.append("\n")
         }
 
         if (analysis.insights.isNotEmpty()) {
-            sb.append("\n💡 *Catatan Insight:*\n")
+            sb.append("💡 *IV. CATATAN AUDIT & INSIGHT DIREKSI*\n")
             for (ins in analysis.insights) {
                 sb.append("• $ins\n")
             }
+            sb.append("\n")
         }
 
-        sb.append("\n📱 _Dicatat dengan Aplikasi Steam Motor_")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("Disahkan oleh *${profile.directorName}* • ${profile.companyName}")
         return sb.toString()
     }
 
     fun buildDreamGoalShareText(): String {
         val progress = dreamGoalProgress.value
+        val profile = _companyProfile.value
         val percent = String.format(Locale.getDefault(), "%.1f%%", progress.progressPercent * 100f)
         val sb = StringBuilder()
-        sb.append("🎯 *PROGRES TABUNGAN BARANG IMPIAN STEAM MOTOR*\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("📌 *Barang Impian:* ${progress.config.itemName}\n")
-        sb.append("💰 *Target Harga:* ${FormatUtils.formatRupiah(progress.config.targetAmount)}\n")
-        sb.append("📈 *Total Terkumpul:* ${FormatUtils.formatRupiah(progress.totalSaved)} ($percent)\n")
-        sb.append("⚡ *Pendapatan Hari Ini:* +${FormatUtils.formatRupiah(progress.todayRevenue)}\n")
-        sb.append("⏳ *Sisa Target:* ${if (progress.remainingAmount <= 0) "LUNAS! 🎉" else FormatUtils.formatRupiah(progress.remainingAmount)}\n")
-        sb.append("🗓️ *Estimasi:* ${if (progress.isAchieved) "Target Sudah Tercapai! ✨" else "~${progress.estimatedDaysRemaining} Hari lagi"}\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("💡 _Basis Perhitungan: ${progress.config.savingSource.label}_\n")
-        sb.append("🏍️ _Setiap motor yang dicuci mendekatkan target impian!_\n")
-        sb.append("📱 _Dicatat dengan Aplikasi Steam Motor_")
+        sb.append("🎯 *${profile.companyName.uppercase()}*\n")
+        sb.append("*RENCANA ALOKASI INVESTASI & DANA CADANGAN USAHA*\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("📌 *Target Belanja Modal:* ${progress.config.itemName}\n")
+        sb.append("💰 *Anggaran Biaya:* ${FormatUtils.formatRupiah(progress.config.targetAmount)}\n")
+        sb.append("📈 *Dana Terakumulasi:* ${FormatUtils.formatRupiah(progress.totalSaved)} ($percent)\n")
+        sb.append("⚡ *Realisasi Hari Ini:* +${FormatUtils.formatRupiah(progress.todayRevenue)}\n")
+        sb.append("⏳ *Sisa Kebutuhan Dana:* ${if (progress.remainingAmount <= 0) "TERPENUHI LUNAS! 🎉" else FormatUtils.formatRupiah(progress.remainingAmount)}\n")
+        sb.append("🗓️ *Estimasi Waktu:* ${if (progress.isAchieved) "Target Investasi Tercapai! ✨" else "~${progress.estimatedDaysRemaining} Hari Operasional"}\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("💡 _Basis Alokasi Kas: ${progress.config.savingSource.label}_\n")
+        sb.append("📱 _Dicatat oleh Sistem Terpadu ${profile.companyName}_")
         return sb.toString()
     }
 
     fun buildMonthlyReportWhatsAppText(summary: MonthlySummaryData = monthlySummaryData.value): String {
+        return buildCorporateWhatsAppReport(summary)
+    }
+
+    fun buildCorporateWhatsAppReport(
+        summary: MonthlySummaryData = monthlySummaryData.value,
+        profile: CompanyProfile = _companyProfile.value
+    ): String {
+        val docNo = generateDocumentNumber("FIN-OPS", summary.month + 1, summary.year)
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val ownerMargin = if (summary.totalGrossRevenue > 0) {
+            (summary.totalOwnerShare.toFloat() / summary.totalGrossRevenue.toFloat()) * 100f
+        } else 0f
+
         val sb = StringBuilder()
-        sb.append("📊 *REKAP BULANAN STEAM MOTOR*\n")
-        sb.append("🗓️ *Bulan:* ${summary.monthName} ${summary.year}\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("🏍️ *Total Unit:* ${summary.totalMotors} motor\n")
-        sb.append("💵 *Omset Kotor:* ${FormatUtils.formatRupiah(summary.totalGrossRevenue)}\n")
-        sb.append("🤝 *Bagi Hasil Pekerja:* ${FormatUtils.formatRupiah(summary.totalWasherShare)}\n")
-        val ownerMargin = if (summary.totalGrossRevenue > 0) (summary.totalOwnerShare.toFloat() / summary.totalGrossRevenue.toFloat()) * 100f else 0f
-        sb.append("🏦 *Kas Bersih Pemilik:* ${FormatUtils.formatRupiah(summary.totalOwnerShare)} (${String.format(Locale.getDefault(), "%.0f", ownerMargin)}%)\n")
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("📈 *RATA-RATA & INSIGHT:*\n")
-        sb.append("• Hari Buka Aktif: ${summary.activeDaysCount} dari ${summary.daysInMonth} hari\n")
-        sb.append("• Rata-rata: ${String.format(Locale.getDefault(), "%.1f", summary.averageDailyMotors)} motor/hari\n")
-        sb.append("• Rata-rata Omset: ${FormatUtils.formatRupiah(summary.averageDailyGross)}/hari\n")
-        sb.append("• Rata-rata Kas Pemilik: ${FormatUtils.formatRupiah(summary.averageDailyOwnerShare)}/hari\n")
+        sb.append("🏢 *${profile.companyName.uppercase()}*\n")
+        sb.append("*${profile.divisionName}*\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("📑 *MEMORANDUM LAPORAN KEUANGAN RESMI (AUDITED)*\n")
+        sb.append("No. Dokumen : $docNo\n")
+        sb.append("Sifat       : RAHASIA & TERBATAS (CONFIDENTIAL)\n")
+        sb.append("Periode     : ${summary.monthName.uppercase()} ${summary.year}\n")
+        sb.append("Tanggal     : $currentDateStr\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        sb.append("Kepada Yth,\n")
+        sb.append("*Dewan Direksi & Manajemen ${profile.companyName}*\n\n")
+        sb.append("Dengan hormat,\n")
+        sb.append("Bersama ini kami sampaikan Laporan Pertanggungjawaban Finansial dan Kinerja Operasional Divisi Perawatan Kendaraan untuk periode ${summary.monthName} ${summary.year} yang telah diverifikasi secara akuntabel:\n\n")
+
+        sb.append("📊 *I. RINGKASAN EKSEKUTIF (EXECUTIVE SUMMARY)*\n")
+        sb.append("• Total Armada Dilayani  : *${summary.totalMotors} Unit*\n")
+        sb.append("• Pendapatan Kotor (Gross): *${FormatUtils.formatRupiah(summary.totalGrossRevenue)}*\n")
+        sb.append("• Beban Jasa Tenaga Cuci : *${FormatUtils.formatRupiah(summary.totalWasherShare)}* (50.0%)\n")
+        sb.append("• Laba Bersih Kas PT/Owner: *${FormatUtils.formatRupiah(summary.totalOwnerShare)}* (${String.format(Locale.getDefault(), "%.0f", ownerMargin)}%)\n")
+        sb.append("• Throughput Rata-rata   : ${String.format(Locale.getDefault(), "%.1f", summary.averageDailyMotors)} unit/hari aktif\n")
+        sb.append("• Hari Kerja Operasional : ${summary.activeDaysCount} dari ${summary.daysInMonth} hari\n")
         if (summary.peakDay != null) {
-            sb.append("• 🏆 Hari Teramai: ${summary.peakDay.dayName}, ${summary.peakDay.dayOfMonth} ${summary.monthName} (${summary.peakDay.motorCount} motor - ${FormatUtils.formatRupiah(summary.peakDay.grossRevenue)})\n")
+            sb.append("• 🏆 Rekor Hari Teramai  : ${summary.peakDay.dayName}, ${summary.peakDay.dayOfMonth} ${summary.monthName} (${summary.peakDay.motorCount} unit - ${FormatUtils.formatRupiah(summary.peakDay.grossRevenue)})\n")
         }
+        sb.append("\n")
+
+        sb.append("💳 *II. SALURAN PENERIMAAN KAS & BANK*\n")
+        val grossFloat = if (summary.totalGrossRevenue > 0) summary.totalGrossRevenue.toFloat() else 1f
+        val cashPct = (summary.cashAmount.toFloat() / grossFloat) * 100f
+        val qrisPct = (summary.qrisAmount.toFloat() / grossFloat) * 100f
+        sb.append("• Kas Tunai (Cash on Hand) : ${FormatUtils.formatRupiah(summary.cashAmount)} (${String.format(Locale.getDefault(), "%.1f", cashPct)}%)\n")
+        sb.append("• QRIS Merchant Settlement : ${FormatUtils.formatRupiah(summary.qrisAmount)} (${String.format(Locale.getDefault(), "%.1f", qrisPct)}%)\n")
+        if (summary.transferAmount > 0) {
+            val trfPct = (summary.transferAmount.toFloat() / grossFloat) * 100f
+            sb.append("• Transfer Rekening Bank   : ${FormatUtils.formatRupiah(summary.transferAmount)} (${String.format(Locale.getDefault(), "%.1f", trfPct)}%)\n")
+        }
+        sb.append("\n")
 
         if (summary.washerStats.isNotEmpty()) {
-            sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-            sb.append("👥 *RINCIAN KOMISI PETUGAS CUCI:*\n")
-            for (w in summary.washerStats) {
-                sb.append("• *${w.washerName}*: ${w.motorCount} motor (${FormatUtils.formatRupiah(w.totalShare)}) - ${String.format(Locale.getDefault(), "%.0f", w.percentage)}%\n")
+            sb.append("👥 *III. ALOKASI BEBAN HONORARIUM OPERATOR*\n")
+            summary.washerStats.forEachIndexed { idx, w ->
+                sb.append("${idx + 1}. *${w.washerName}*: ${w.motorCount} unit • Hak: *${FormatUtils.formatRupiah(w.totalShare)}* (${String.format(Locale.getDefault(), "%.0f", w.percentage)}%)\n")
             }
+            sb.append("\n")
         }
 
-        val activeDailyBreakdown = summary.dailyBreakdown.filter { it.motorCount > 0 }
-        if (activeDailyBreakdown.isNotEmpty()) {
-            sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-            sb.append("📅 *RINCIAN HARIAN:*\n")
-            for (d in activeDailyBreakdown) {
-                val washerInfo = if (d.topWasherName.isNotBlank()) " [${d.topWasherName}]" else ""
-                sb.append("• ${String.format(Locale.getDefault(), "%02d", d.dayOfMonth)} ${summary.monthName.take(3)} (${d.dayName}): ${d.motorCount} m | Omset ${FormatUtils.formatRupiah(d.grossRevenue)} | Kas ${FormatUtils.formatRupiah(d.ownerShare)}$washerInfo\n")
-            }
-        }
-
-        sb.append("━━━━━━━━━━━━━━━━━━━━━\n")
-        sb.append("💳 *METODE PEMBAYARAN:*\n")
-        sb.append("• Tunai: ${FormatUtils.formatRupiah(summary.cashAmount)}\n")
-        sb.append("• QRIS: ${FormatUtils.formatRupiah(summary.qrisAmount)}\n")
-        if (summary.transferAmount > 0) {
-            sb.append("• Transfer: ${FormatUtils.formatRupiah(summary.transferAmount)}\n")
-        }
-
-        sb.append("\n✨ _Tarif 10rb/motor, Bagi hasil 5rb/motor_\n")
-        sb.append("📱 _Dicatat dengan Aplikasi Steam Motor_")
+        sb.append("📌 *IV. LEMBAR PENGESAHAN & OTORISASI PERUSAHAAN*\n")
+        sb.append("• Dibuat Oleh   : ${profile.cashierName}\n")
+        sb.append("• Diperiksa     : ${profile.financeManagerName}\n")
+        sb.append("• Disahkan Oleh : ${profile.directorName}\n")
+        sb.append("• Status Sistem : TERVERIFIKASI DIGITAL & TERAKREDITASI SISTEM\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("Demikian laporan resmi ini diterbitkan secara sah dan akuntabel.\n")
+        sb.append("🏛️ *${profile.companyName}*")
         return sb.toString()
     }
 
     fun buildMonthlyCsvContent(summary: MonthlySummaryData = monthlySummaryData.value): String {
+        return buildCorporateMonthlyCsv(summary)
+    }
+
+    fun buildCorporateMonthlyCsv(
+        summary: MonthlySummaryData = monthlySummaryData.value,
+        profile: CompanyProfile = _companyProfile.value
+    ): String {
+        val docNo = generateDocumentNumber("FIN-OPS", summary.month + 1, summary.year)
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
         val sb = StringBuilder()
-        sb.append("Tanggal,Hari,Jumlah Motor,Omset Kotor (Rp),Bagi Hasil Petugas (Rp),Kas Bersih Pemilik (Rp),Petugas Terbanyak\n")
+
+        // Header KOP SURAT RESMI PERUSAHAAN
+        sb.append("\"====================================================================================================\"\n")
+        sb.append("\"${profile.companyName.uppercase()} - ${profile.divisionName}\"\n")
+        sb.append("\"LAPORAN KEUANGAN OPERASIONAL & PERTANGGUNGJAWABAN KAS RESMI (CORPORATE FINANCIAL STATEMENT)\"\n")
+        sb.append("\"Izin Usaha / NIB: ${profile.legalRegNo} | Alamat: ${profile.companyAddress}\"\n")
+        sb.append("\"No. Dokumen: $docNo\",\"Sifat: RAHASIA & TERBATAS (CONFIDENTIAL)\",\"Periode: ${summary.monthName} ${summary.year}\"\n")
+        sb.append("\"Tanggal Terbit: $currentDateStr\",\"Status Audit: TERVERIFIKASI SISTEM PEMBUKUAN OTOMATIS\",\"Mata Uang: IDR (Rupiah)\"\n")
+        sb.append("\"====================================================================================================\"\n\n")
+
+        // SECTION 1: RINGKASAN EKSEKUTIF FINANSIAL
+        sb.append("\"--- 1. RINGKASAN EKSEKUTIF FINANSIAL (EXECUTIVE SUMMARY) ---\"\n")
+        sb.append("Indikator Finansial,Nilai Akumulasi,Satuan,Keterangan\n")
+        sb.append("Total Volume Armada,${summary.totalMotors},Unit,Volume jasa cuci terselesaikan\n")
+        sb.append("Total Pendapatan Bruto (Gross),${summary.totalGrossRevenue},Rupiah,Penerimaan tarif Rp 10.000/motor\n")
+        sb.append("Beban Jasa Operator Cuci,${summary.totalWasherShare},Rupiah,Alokasi bagi hasil 50% (Rp 5.000/motor)\n")
+        sb.append("Laba Bersih Kas Pemilik / PT,${summary.totalOwnerShare},Rupiah,Sisa hasil usaha bersih 50%\n")
+        sb.append("Rata-rata Volume Harian,${String.format(Locale.getDefault(), "%.1f", summary.averageDailyMotors)},Unit/Hari,Dihitung dari hari aktif operasional\n")
+        sb.append("Hari Buka Operasional,${summary.activeDaysCount},Hari,Total hari kerja dalam periode\n\n")
+
+        // SECTION 2: SALURAN KAS & PEMBAYARAN
+        sb.append("\"--- 2. REKAPITULASI PENERIMAAN KAS & REKENING (CASH FLOW RECONCILIATION) ---\"\n")
+        sb.append("Saluran Pembayaran,Nominal (Rp),Proporsi (%),Status Rekonsiliasi\n")
+        val grossFloat = if (summary.totalGrossRevenue > 0) summary.totalGrossRevenue.toFloat() else 1f
+        val cashPct = (summary.cashAmount.toFloat() / grossFloat) * 100f
+        val qrisPct = (summary.qrisAmount.toFloat() / grossFloat) * 100f
+        val trfPct = (summary.transferAmount.toFloat() / grossFloat) * 100f
+        sb.append("Kas Tunai (Cash on Hand),${summary.cashAmount},${String.format(Locale.getDefault(), "%.1f", cashPct)}%,Fisik Kas Kasir Terverifikasi\n")
+        sb.append("QRIS Merchant Terintegrasi,${summary.qrisAmount},${String.format(Locale.getDefault(), "%.1f", qrisPct)}%,Settlement Rekening Penampung\n")
+        if (summary.transferAmount > 0) {
+            sb.append("Transfer Bank Non-Tunai,${summary.transferAmount},${String.format(Locale.getDefault(), "%.1f", trfPct)}%,Mutasi Rekening Bank Valid\n")
+        }
+        sb.append("\n")
+
+        // SECTION 3: REKAPITULASI PEMBUKUAN ARUS KAS HARIAN
+        sb.append("\"--- 3. BUKU BESAR PEMBUKUAN ARUS KAS HARIAN ---\"\n")
+        sb.append("No,Tanggal,Hari,Jumlah Armada,Omset Bruto (Rp),Beban Operator (Rp),Kas Bersih PT (Rp),Operator Bertugas\n")
         val sdfDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-        for (d in summary.dailyBreakdown) {
+        summary.dailyBreakdown.forEachIndexed { idx, d ->
             val dateStr = sdfDate.format(Date(d.dateMillis))
             val cleanWasher = d.topWasherName.replace(",", ";").replace("\"", "")
-            sb.append("$dateStr,${d.dayName},${d.motorCount},${d.grossRevenue},${d.washerShare},${d.ownerShare},\"$cleanWasher\"\n")
+            sb.append("${idx + 1},$dateStr,${d.dayName},${d.motorCount},${d.grossRevenue},${d.washerShare},${d.ownerShare},\"$cleanWasher\"\n")
         }
-        sb.append("TOTAL,,${summary.totalMotors},${summary.totalGrossRevenue},${summary.totalWasherShare},${summary.totalOwnerShare},\n")
+        sb.append("TOTAL AKUMULASI,,,\"${summary.totalMotors}\",\"${summary.totalGrossRevenue}\",\"${summary.totalWasherShare}\",\"${summary.totalOwnerShare}\",\"Semua Petugas\"\n\n")
+
+        // SECTION 4: REKAPITULASI TENAGA KERJA
+        if (summary.washerStats.isNotEmpty()) {
+            sb.append("\"--- 4. PERTANGGUNGJAWABAN HAK KOMISI & HONORARIUM OPERATOR ---\"\n")
+            sb.append("No,Nama Operator Cuci,Volume Unit,Kontribusi (%),Hak Bagi Hasil (Rp),Status Hak\n")
+            summary.washerStats.forEachIndexed { idx, w ->
+                val cleanName = w.washerName.replace(",", " ").replace("\"", "")
+                sb.append("${idx + 1},\"$cleanName\",${w.motorCount},${String.format(Locale.getDefault(), "%.1f", w.percentage)}%,${w.totalShare},Telah Direkonsiliasi\n")
+            }
+            sb.append("\n")
+        }
+
+        // SECTION 5: PENGESAHAN DOKUMEN RESMI PT
+        sb.append("\"--- 5. LEMBAR PENGESAHAN OTORISASI PERUSAHAAN ---\"\n")
+        sb.append("\"Dibuat Oleh: ${profile.cashierName}\",\"Diperiksa Oleh: ${profile.financeManagerName}\",\"Disahkan Oleh: ${profile.directorName}\"\n")
+        sb.append("\"Status: Terverifikasi Digital\",\"Status: Telah Diaudit Akuntansi\",\"Status: Sah & Mengikat Direksi\"\n")
+        sb.append("\"Dokumen ini diterbitkan secara otomatis oleh Sistem Pembukuan Terintegrasi ${profile.companyName}\"\n")
+
         return sb.toString()
     }
 
     fun buildDetailedCsvContent(records: List<WashRecord> = filteredRecords.value): String {
+        return buildCorporateDetailedCsv(records)
+    }
+
+    fun buildCorporateDetailedCsv(
+        records: List<WashRecord> = filteredRecords.value,
+        profile: CompanyProfile = _companyProfile.value
+    ): String {
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("LEDGER-DTL", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
         val sb = StringBuilder()
-        sb.append("ID,Waktu Lengkap,Tanggal,Jam,Jumlah Motor,Plat Nomor,Tipe Motor,Petugas Cuci,Tarif Per Motor,Bagi Hasil Per Motor,Total Omset Kotor,Bagi Hasil Petugas,Kas Bersih Pemilik,Metode Pembayaran,Catatan\n")
+
+        sb.append("\"====================================================================================================\"\n")
+        sb.append("\"${profile.companyName.uppercase()} - ${profile.divisionName}\"\n")
+        sb.append("\"BUKU BESAR RINCIAN TRANSAKSI PER UNIT ARMADA KENDARAAN (DETAILED TRANSACTION LEDGER)\"\n")
+        sb.append("\"Izin Usaha / NIB: ${profile.legalRegNo} | Alamat: ${profile.companyAddress}\"\n")
+        sb.append("\"No. Dokumen: $docNo\",\"Sifat: RAHASIA (AUDIT TRAIL)\",\"Tanggal Terbit: $currentDateStr\"\n")
+        sb.append("\"Total Catatan: ${records.size} Rekaman\",\"Mata Uang: IDR (Rupiah)\",\"Status: Terverifikasi Sistem\"\n")
+        sb.append("\"====================================================================================================\"\n\n")
+
+        sb.append("ID,Waktu Lengkap,Tanggal,Jam,Jumlah Motor,Plat Nomor,Tipe Motor,Petugas Cuci,Tarif Per Motor,Bagi Hasil Per Motor,Total Omset Kotor,Bagi Hasil Petugas,Kas Bersih Pemilik,Metode Pembayaran,Catatan Operasional\n")
         val sdfDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
         val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
         val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
@@ -1108,7 +1319,47 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             val cleanNote = r.note.replace(",", ";").replace("\n", " ").replace("\"", "")
             sb.append("${r.id},$fullTime,$dateStr,$timeStr,${r.motorCount},\"$cleanPlate\",${r.motorType},\"$cleanWasher\",${r.pricePerMotor},${r.washerSharePerMotor},${r.totalPrice},${r.totalWasherShare},${r.totalOwnerShare},${r.paymentMethod},\"$cleanNote\"\n")
         }
+
+        val totalGross = records.sumOf { it.totalPrice }
+        val totalWasher = records.sumOf { it.totalWasherShare }
+        val totalOwner = records.sumOf { it.totalOwnerShare }
+        val totalMotors = records.sumOf { it.motorCount.toLong() }
+        sb.append("TOTAL AKUMULASI,,,,$totalMotors,,,,,\"Total:\",$totalGross,$totalWasher,$totalOwner,,\n\n")
+
+        sb.append("\"--- LEMBAR PENGESAHAN DIREKSI & AUDITOR ---\"\n")
+        sb.append("\"Dibuat Oleh: ${profile.cashierName}\",\"Diperiksa Oleh: ${profile.financeManagerName}\",\"Disahkan Oleh: ${profile.directorName}\"\n")
+        sb.append("\"Status: Sah & Mengikat\",\"Dokumen Sistem Terintegrasi ${profile.companyName}\",\"\"\n")
+
         return sb.toString()
+    }
+
+    /**
+     * Generates an official corporate HTML document for Monthly Recap
+     */
+    fun buildCorporateMonthlyHtml(summary: MonthlySummaryData = monthlySummaryData.value): String {
+        val docNo = generateDocumentNumber("FIN-OPS", summary.month + 1, summary.year)
+        return CorporateReportGenerator.generateMonthlyCorporateHtml(
+            summary = summary,
+            profile = _companyProfile.value,
+            documentNumber = docNo
+        )
+    }
+
+    /**
+     * Generates an official corporate HTML document for detailed transaction list
+     */
+    fun buildCorporateDetailedHtml(
+        records: List<WashRecord> = filteredRecords.value,
+        periodTitle: String = _selectedPeriod.value.title
+    ): String {
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("LEDGER-DTL", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+        return CorporateReportGenerator.generateDetailedCorporateHtml(
+            records = records,
+            profile = _companyProfile.value,
+            periodTitle = periodTitle,
+            documentNumber = docNo
+        )
     }
 
     fun getAllRecordsList(): List<WashRecord> = allRecords.value

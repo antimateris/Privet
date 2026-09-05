@@ -25,6 +25,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Assessment
+import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
@@ -36,10 +37,13 @@ import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.Handshake
 import androidx.compose.material.icons.filled.MonetizationOn
 import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.TrendingUp
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -100,6 +104,16 @@ fun MonthlyRecapScreen(
     }
 
     var filterOnlyActiveDays by remember { mutableStateOf(false) }
+    var showExportDialog by remember { mutableStateOf(false) }
+
+    if (showExportDialog) {
+        com.example.ui.dialogs.ExportReportDialog(
+            viewModel = viewModel,
+            monthlySummary = monthlySummary,
+            onDismiss = { showExportDialog = false },
+            onShowSnackbar = onShowSnackbar
+        )
+    }
 
     val displayedDays = remember(monthlySummary.dailyBreakdown, filterOnlyActiveDays) {
         if (filterOnlyActiveDays) {
@@ -237,12 +251,13 @@ fun MonthlyRecapScreen(
             }
         }
 
-        // 2. Main Export Actions Hub Card
+        // 2. Main Export Actions Hub Card (Corporate PT Style)
         item {
             Card(
                 shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f)),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, Color(0xFFCBD5E1)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(
@@ -257,31 +272,80 @@ fun MonthlyRecapScreen(
                     ) {
                         Box(
                             modifier = Modifier
-                                .size(40.dp)
+                                .size(42.dp)
                                 .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.primary),
+                                .background(Color(0xFF0F172A)),
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Description,
+                                imageVector = Icons.Default.Business,
                                 contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(22.dp)
+                                tint = Color(0xFF38BDF8),
+                                modifier = Modifier.size(24.dp)
                             )
                         }
                         Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Laporan Resmi Perusahaan",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    color = Color(0xFF0F172A),
+                                    shape = RoundedCornerShape(4.dp)
+                                ) {
+                                    Text(
+                                        text = "Gaya PT",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF38BDF8),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             Text(
-                                text = "Ekspor Laporan Bulanan",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Bagikan ke Excel (.csv), WhatsApp, atau salin teks",
+                                text = "Kop surat PT, nomor dokumen, watermark audit & tanda tangan direksi",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+
+                    // Primary Hero Button: Cetak / Simpan PDF Resmi PT
+                    Button(
+                        onClick = {
+                            val html = viewModel.buildCorporateMonthlyHtml(monthlySummary)
+                            val jobName = "Laporan_Keuangan_PT_${monthlySummary.monthName}_${monthlySummary.year}"
+                            val success = ExportUtils.printHtmlDocument(context, jobName, html)
+                            if (success) {
+                                onShowSnackbar("Membuka Layanan Cetak / Simpan PDF Resmi PT...")
+                            } else {
+                                onShowSnackbar("Gagal memproses dokumen cetak PDF.")
+                            }
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0F172A)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("btn_export_corporate_pdf"),
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = null,
+                            tint = Color(0xFF38BDF8),
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Cetak / Simpan PDF Resmi PT (A4)",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
                     }
 
                     // Action buttons grid
@@ -289,19 +353,52 @@ fun MonthlyRecapScreen(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        // Button 1: Ekspor CSV (Excel)
+                        // Button 1: Dokumen HTML PT
                         Button(
                             onClick = {
-                                val csvContent = viewModel.buildMonthlyCsvContent(monthlySummary)
-                                val fileName = "Laporan_Steam_${monthlySummary.monthName}_${monthlySummary.year}.csv"
+                                val html = viewModel.buildCorporateMonthlyHtml(monthlySummary)
+                                val fileName = "Laporan_Resmi_PT_${monthlySummary.monthName}_${monthlySummary.year}.html"
+                                val success = ExportUtils.shareHtmlFile(
+                                    context = context,
+                                    fileName = fileName,
+                                    htmlContent = html,
+                                    chooserTitle = "Bagikan Dokumen Laporan PT"
+                                )
+                                if (success) {
+                                    onShowSnackbar("Membuka pilihan ekspor dokumen PT...")
+                                } else {
+                                    onShowSnackbar("Gagal mengekspor dokumen HTML")
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0369A1)),
+                            modifier = Modifier
+                                .weight(1f)
+                                .testTag("btn_export_html_monthly"),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PictureAsPdf,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("HTML PT", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
+                        // Button 2: Ekspor CSV (Excel)
+                        Button(
+                            onClick = {
+                                val csvContent = viewModel.buildCorporateMonthlyCsv(monthlySummary)
+                                val fileName = "Buku_Kas_Bulanan_PT_${monthlySummary.monthName}_${monthlySummary.year}.csv"
                                 val success = ExportUtils.shareCsvFile(
                                     context = context,
                                     fileName = fileName,
                                     csvContent = csvContent,
-                                    chooserTitle = "Bagikan Laporan CSV Excel"
+                                    chooserTitle = "Bagikan Buku Kas CSV PT"
                                 )
                                 if (success) {
-                                    onShowSnackbar("Membuka pilihan ekspor CSV Excel...")
+                                    onShowSnackbar("Membuka pilihan ekspor CSV PT...")
                                 } else {
                                     onShowSnackbar("Gagal membuat file CSV")
                                 }
@@ -311,25 +408,25 @@ fun MonthlyRecapScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("btn_export_csv_monthly"),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.TableChart,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
+                                modifier = Modifier.size(16.dp)
                             )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Ekspor CSV", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Buku Kas CSV", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
 
-                        // Button 2: Bagikan WhatsApp
+                        // Button 3: Bagikan WhatsApp Resmi
                         Button(
                             onClick = {
-                                val waText = viewModel.buildMonthlyReportWhatsAppText(monthlySummary)
+                                val waText = viewModel.buildCorporateWhatsAppReport(monthlySummary)
                                 ExportUtils.shareText(
                                     context = context,
                                     text = waText,
-                                    chooserTitle = "Bagikan Rekap Bulanan via WhatsApp"
+                                    chooserTitle = "Bagikan Memorandum Resmi via WhatsApp"
                                 )
                             },
                             shape = RoundedCornerShape(12.dp),
@@ -337,72 +434,54 @@ fun MonthlyRecapScreen(
                             modifier = Modifier
                                 .weight(1f)
                                 .testTag("btn_share_wa_monthly"),
-                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 10.dp)
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Share,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("WhatsApp", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                        }
-
-                        // Button 3: Salin Teks Ringkasan
-                        OutlinedButton(
-                            onClick = {
-                                val text = viewModel.buildMonthlyReportWhatsAppText(monthlySummary)
-                                ExportUtils.copyToClipboard(context, "Rekap Bulanan Steam Motor", text)
-                                onShowSnackbar("Teks rekap bulanan disalin ke clipboard!")
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier
-                                .weight(0.9f)
-                                .testTag("btn_copy_text_monthly"),
-                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 10.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.ContentCopy,
-                                contentDescription = null,
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Salin", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                            Text("WhatsApp", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                     }
 
-                    // Secondary CSV detail export option
-                    Row(
+                    // Banner link to open the complete export modal & edit company profile
+                    Surface(
+                        color = Color(0xFFF1F5F9),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clickable {
-                                val allRecs = viewModel.getAllRecordsList()
-                                val csv = viewModel.buildDetailedCsvContent(allRecs)
-                                val fileName = "Semua_Transaksi_Steam_Motor.csv"
-                                ExportUtils.shareCsvFile(
-                                    context = context,
-                                    fileName = fileName,
-                                    csvContent = csv,
-                                    chooserTitle = "Ekspor Seluruh Transaksi Rinci (.csv)"
-                                )
-                                onShowSnackbar("Membuka ekspor seluruh riwayat transaksi...")
-                            }
-                            .padding(vertical = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .clickable { showExportDialog = true }
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Assessment,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Atau ekspor seluruh transaksi rinci lengkap per motor (.csv)",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Tune,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Atur Kop Surat PT / Opsi Ekspor Lengkap",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                            Text(
+                                text = "Buka ▸",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
             }
@@ -787,7 +866,11 @@ fun MonthlyRecapScreen(
                 }
             }
         } else {
-            items(displayedDays, key = { it.dateKey }) { dayRecord ->
+            items(
+                items = displayedDays,
+                key = { it.dateKey },
+                contentType = { "daily_row" }
+            ) { dayRecord ->
                 DailyBreakdownRowCard(
                     day = dayRecord,
                     monthName = monthlySummary.monthName,
