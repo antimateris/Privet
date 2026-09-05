@@ -1,0 +1,6 @@
+{
+  "name": "Steam Motor",
+  "description": "Aplikasi kasir steam cuci motor tarif 10rb bagi hasil 5rb, kalender omset multi-tahun, ringkasan bulanan, dan ekspor laporan CSV/WA.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
