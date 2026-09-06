@@ -39,6 +39,8 @@ class FirestoreWashRepository(
         const val DEFAULT_BRANCH = "lion_steam_pusat"
         private const val COLLECTION_BRANCHES = "branches"
         private const val COLLECTION_TRANSACTIONS = "transactions"
+        private const val COLLECTION_SETTINGS = "settings"
+        private const val DOC_ACCOUNTS = "account_credentials"
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
@@ -89,6 +91,13 @@ class FirestoreWashRepository(
             ?.collection(COLLECTION_BRANCHES)
             ?.document(branchId)
             ?.collection(COLLECTION_TRANSACTIONS)
+
+    private fun getAccountSettingsDoc(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_SETTINGS)
+            ?.document(DOC_ACCOUNTS)
 
     /**
      * Checks if Firestore is ready and available in the current environment.
@@ -316,6 +325,49 @@ class FirestoreWashRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to clear all Firestore transactions", e)
+            Result.failure(e)
+        }
+    }
+
+    // --- Account Credentials Sync (name & password per role, shared across devices) ---
+
+    /**
+     * Listens in real-time to the shared account credentials document, so that a password
+     * or name change made on one device (Kasir/Manager/Owner) reflects on all other devices.
+     * Returns null on a snapshot where the document doesn't exist yet (first run).
+     */
+    fun listenAccountSettings(branchId: String = DEFAULT_BRANCH): Flow<Map<String, Any>?> {
+        val doc = getAccountSettingsDoc(branchId) ?: return flowOf(null)
+
+        return callbackFlow {
+            val listenerRegistration = doc.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Listen account settings failed", error)
+                    return@addSnapshotListener
+                }
+                trySend(snapshot?.data)
+            }
+            awaitClose { listenerRegistration.remove() }
+        }
+    }
+
+    /**
+     * Merges the given fields (e.g. "KASIR_name", "KASIR_pass") into the shared account
+     * credentials document without overwriting fields belonging to other roles.
+     */
+    suspend fun saveAccountFields(
+        fields: Map<String, Any>,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val doc = getAccountSettingsDoc(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        return try {
+            doc.set(fields, com.google.firebase.firestore.SetOptions.merge()).awaitTask()
+            Log.d(TAG, "Account fields synced to Firestore: ${fields.keys}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync account fields", e)
             Result.failure(e)
         }
     }
