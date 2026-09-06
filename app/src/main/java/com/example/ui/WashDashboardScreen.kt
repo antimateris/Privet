@@ -425,10 +425,16 @@ fun WashDashboardScreen(
             ) {
                 // Section: Cloud Sync Status Banner (Real-time Firebase)
                 item {
+                    val isCloudActive = cloudSyncStatus.contains("aktif", ignoreCase = true) || cloudSyncStatus.contains("Tersinkron", ignoreCase = true)
+                    val bannerBg = if (isCloudActive) Color(0xFFF0FDF4) else Color(0xFFF1F5F9)
+                    val bannerBorder = if (isCloudActive) Color(0xFF86EFAC) else Color(0xFFCBD5E1)
+                    val bannerDot = if (isCloudActive) Color(0xFF16A34A) else Color(0xFF64748B)
+                    val bannerText = if (isCloudActive) Color(0xFF166534) else Color(0xFF334155)
+
                     Surface(
-                        color = Color(0xFFF0FDF4),
+                        color = bannerBg,
                         shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, Color(0xFF86EFAC)),
+                        border = BorderStroke(1.dp, bannerBorder),
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("cloud_sync_banner")
@@ -443,13 +449,13 @@ fun WashDashboardScreen(
                                 modifier = Modifier
                                     .size(8.dp)
                                     .clip(CircleShape)
-                                    .background(Color(0xFF16A34A))
+                                    .background(bannerDot)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
                                 text = cloudSyncStatus,
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color(0xFF166534),
+                                color = bannerText,
                                 fontWeight = FontWeight.Medium,
                                 modifier = Modifier.weight(1f)
                             )
@@ -468,7 +474,7 @@ fun WashDashboardScreen(
                                     Icon(
                                         imageVector = Icons.Default.Sync,
                                         contentDescription = null,
-                                        tint = Color(0xFF166534),
+                                        tint = bannerText,
                                         modifier = Modifier.size(14.dp)
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
@@ -476,7 +482,7 @@ fun WashDashboardScreen(
                                         "Sinkronkan",
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF166534)
+                                        color = bannerText
                                     )
                                 }
                             }

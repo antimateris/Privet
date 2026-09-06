@@ -172,9 +172,11 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedQuickWasher = MutableStateFlow("")
     val selectedQuickWasher: StateFlow<String> = _selectedQuickWasher.asStateFlow()
 
-    private val firestoreRepository = FirestoreWashRepository()
+    private val firestoreRepository by lazy {
+        FirestoreWashRepository(context = getApplication<Application>())
+    }
 
-    private val _cloudSyncStatus = MutableStateFlow("Sinkronisasi Cloud Aktif")
+    private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
     private val userPrefs by lazy {
@@ -277,7 +279,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 } catch (_: Exception) {
-                    _cloudSyncStatus.value = "Mode lokal aktif (offline)"
+                    _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
                 }
             }
 
@@ -297,6 +299,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             }
+        } else {
+            _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
         }
     }
 
@@ -1235,16 +1239,21 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch(Dispatchers.IO) {
             val records = repository.getAllRecords().first()
             if (records.isEmpty()) {
-                onComplete(0, "Tidak ada data transaksi lokal untuk diunggah")
+                onComplete(0, "Belum ada transaksi tersimpan untuk disinkronkan")
+                return@launch
+            }
+            if (!firestoreRepository.isAvailable()) {
+                _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                onComplete(records.size, "Mode lokal aktif: ${records.size} transaksi aman tersimpan di HP")
                 return@launch
             }
             val res = firestoreRepository.batchUploadLocalRecords(records)
             res.onSuccess { count ->
                 _cloudSyncStatus.value = "Tersinkron • $count transaksi di cloud"
-                onComplete(count, "Berhasil menyinkronkan $count transaksi ke Firestore")
-            }.onFailure { err ->
-                _cloudSyncStatus.value = "Gagal sinkron: ${err.message}"
-                onComplete(0, "Gagal sinkronisasi: ${err.message}")
+                onComplete(count, "Berhasil menyinkronkan $count transaksi ke Cloud")
+            }.onFailure { _ ->
+                _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                onComplete(records.size, "Mode lokal aktif: ${records.size} transaksi aman tersimpan di HP")
             }
         }
     }

@@ -52,8 +52,7 @@ object ThermalReceiptUtils {
         record: WashRecord,
         businessName: String = BUSINESS_NAME,
         address: String = BUSINESS_ADDRESS,
-        phone: String = BUSINESS_PHONE,
-        cashierName: String = record.createdBy
+        phone: String = BUSINESS_PHONE
     ): String {
         val cleanBusinessName = businessName
             .replace("PT.", "", ignoreCase = true)
@@ -66,7 +65,6 @@ object ThermalReceiptUtils {
 
         val plate = if (record.licensePlate.isNotBlank()) record.licensePlate else "-"
         val washer = if (record.washerName.isNotBlank()) record.washerName else "-"
-        val displayCashier = cashierName.ifBlank { record.createdBy.ifBlank { "Kasir" } }
 
         val lineSeparator = "--------------------------------"
         val doubleSeparator = "================================"
@@ -79,7 +77,6 @@ object ThermalReceiptUtils {
             appendLine(doubleSeparator)
             appendLine("No. Trx  : $trxId")
             appendLine("Waktu    : $dateStr")
-            appendLine("Kasir    : $displayCashier")
             appendLine(lineSeparator)
             appendLine("Plat No  : $plate")
             appendLine("Tipe     : ${record.motorType}")
@@ -109,10 +106,9 @@ object ThermalReceiptUtils {
         record: WashRecord,
         businessName: String = BUSINESS_NAME,
         address: String = BUSINESS_ADDRESS,
-        phone: String = getReceiptPhone(context),
-        cashierName: String = record.createdBy
+        phone: String = getReceiptPhone(context)
     ) {
-        val receiptText = generateReceiptText(record, businessName, address, phone, cashierName)
+        val receiptText = generateReceiptText(record, businessName, address, phone)
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             putExtra(Intent.EXTRA_TEXT, receiptText)
             type = "text/plain"
@@ -129,11 +125,10 @@ object ThermalReceiptUtils {
         record: WashRecord,
         businessName: String = BUSINESS_NAME,
         address: String = BUSINESS_ADDRESS,
-        phone: String = getReceiptPhone(context),
-        cashierName: String = record.createdBy
+        phone: String = getReceiptPhone(context)
     ) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Struk Thermal Lion Steam", generateReceiptText(record, businessName, address, phone, cashierName))
+        val clip = ClipData.newPlainText("Struk Thermal Lion Steam", generateReceiptText(record, businessName, address, phone))
         clipboard.setPrimaryClip(clip)
         Toast.makeText(context, "Teks struk thermal berhasil disalin!", Toast.LENGTH_SHORT).show()
     }
@@ -146,8 +141,7 @@ object ThermalReceiptUtils {
         record: WashRecord,
         businessName: String = BUSINESS_NAME,
         address: String = BUSINESS_ADDRESS,
-        phone: String = getReceiptPhone(context),
-        cashierName: String = record.createdBy
+        phone: String = getReceiptPhone(context)
     ) {
         try {
             val cleanBusinessName = businessName
@@ -160,7 +154,6 @@ object ThermalReceiptUtils {
             val trxId = "TRX-${record.timestamp.toString().takeLast(6)}"
             val plate = if (record.licensePlate.isNotBlank()) record.licensePlate else "-"
             val washer = if (record.washerName.isNotBlank()) record.washerName else "-"
-            val displayCashier = cashierName.ifBlank { record.createdBy.ifBlank { "Kasir" } }
 
             val htmlContent = """
                 <!DOCTYPE html>
@@ -200,7 +193,6 @@ object ThermalReceiptUtils {
 
                     <div>No. Trx: $trxId</div>
                     <div>Waktu  : $dateStr</div>
-                    <div>Kasir  : $displayCashier</div>
                     <div class="divider"></div>
 
                     <div>Plat   : $plate</div>

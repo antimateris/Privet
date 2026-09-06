@@ -59,13 +59,11 @@ fun ThermalReceiptDialog(
     val context = LocalContext.current
     var showEditInfo by remember { mutableStateOf(false) }
     var receiptPhone by remember { mutableStateOf(ThermalReceiptUtils.getReceiptPhone(context)) }
-    var receiptCashier by remember { mutableStateOf(record.createdBy.ifBlank { "Kasir" }) }
 
-    val receiptText = remember(record, receiptPhone, receiptCashier) {
+    val receiptText = remember(record, receiptPhone) {
         ThermalReceiptUtils.generateReceiptText(
             record = record,
-            phone = receiptPhone,
-            cashierName = receiptCashier
+            phone = receiptPhone
         )
     }
 
@@ -129,7 +127,7 @@ fun ThermalReceiptDialog(
                                 )
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Text(
-                                    text = if (showEditInfo) "Tutup Pengaturan Struk" else "Ubah Nomor WA & Nama Kasir",
+                                    text = if (showEditInfo) "Tutup Pengaturan Struk" else "Ubah Nomor WhatsApp Struk",
                                     style = MaterialTheme.typography.bodySmall,
                                     fontWeight = FontWeight.SemiBold,
                                     color = MaterialTheme.colorScheme.primary
@@ -163,26 +161,6 @@ fun ThermalReceiptDialog(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .testTag("input_receipt_wa_phone")
-                            )
-
-                            OutlinedTextField(
-                                value = receiptCashier,
-                                onValueChange = {
-                                    receiptCashier = it
-                                },
-                                label = { Text("Nama Kasir pada Struk") },
-                                placeholder = { Text("Contoh: Kasir Utama, Budi") },
-                                leadingIcon = {
-                                    Icon(
-                                        imageVector = Icons.Default.Person,
-                                        contentDescription = null,
-                                        modifier = Modifier.size(18.dp)
-                                    )
-                                },
-                                singleLine = true,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .testTag("input_receipt_cashier")
                             )
 
                             Text(
@@ -235,8 +213,7 @@ fun ThermalReceiptDialog(
                         ThermalReceiptUtils.shareToThermalPrinter(
                             context = context,
                             record = record,
-                            phone = receiptPhone,
-                            cashierName = receiptCashier
+                            phone = receiptPhone
                         )
                     },
                     modifier = Modifier
@@ -257,8 +234,7 @@ fun ThermalReceiptDialog(
                             ThermalReceiptUtils.printReceiptNative(
                                 context = context,
                                 record = record,
-                                phone = receiptPhone,
-                                cashierName = receiptCashier
+                                phone = receiptPhone
                             )
                         },
                         modifier = Modifier
@@ -273,8 +249,7 @@ fun ThermalReceiptDialog(
                             ThermalReceiptUtils.copyReceiptToClipboard(
                                 context = context,
                                 record = record,
-                                phone = receiptPhone,
-                                cashierName = receiptCashier
+                                phone = receiptPhone
                             )
                         },
                         modifier = Modifier

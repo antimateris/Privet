@@ -1,8 +1,11 @@
 package com.example.data.repository
 
+import android.content.Context
 import android.util.Log
 import com.example.data.model.WashRecord
 import com.google.android.gms.tasks.Task
+import com.google.firebase.FirebaseApp
+import com.google.firebase.FirebaseOptions
 import com.google.firebase.firestore.DocumentSnapshot
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.FirebaseFirestoreSettings
@@ -28,26 +31,57 @@ data class CloudWashRecord(
  * of motor wash transactions for PT. LION STEAM MOTOR.
  */
 class FirestoreWashRepository(
-    private val injectedFirestore: FirebaseFirestore? = null
+    private val injectedFirestore: FirebaseFirestore? = null,
+    private val context: Context? = null
 ) {
     companion object {
         private const val TAG = "FirestoreWashRepo"
         const val DEFAULT_BRANCH = "lion_steam_pusat"
         private const val COLLECTION_BRANCHES = "branches"
         private const val COLLECTION_TRANSACTIONS = "transactions"
+        private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
     private val firestoreInstance: FirebaseFirestore? by lazy {
-        injectedFirestore ?: try {
-            FirebaseFirestore.getInstance().apply {
-                val settings = FirebaseFirestoreSettings.Builder()
-                    .setPersistenceEnabled(true)
-                    .build()
-                firestoreSettings = settings
+        injectedFirestore ?: run {
+            try {
+                val app = try {
+                    FirebaseApp.getInstance()
+                } catch (_: Exception) {
+                    val ctx = context
+                    if (ctx != null) {
+                        try {
+                            FirebaseApp.initializeApp(ctx)
+                        } catch (_: Exception) {
+                            try {
+                                val options = FirebaseOptions.Builder()
+                                    .setApplicationId("1:507656640500:android:2f53f7fe6b8260fcae8ba1")
+                                    .setApiKey("AIzaSyCN7hfhHO6VZQttNc2TKc6aHls1ZjSr_GU")
+                                    .setProjectId("lion-steam-motor-e8eb3")
+                                    .setStorageBucket("lion-steam-motor-e8eb3.firebasestorage.app")
+                                    .build()
+                                FirebaseApp.initializeApp(ctx, options)
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                    } else null
+                }
+
+                if (app != null) {
+                    FirebaseFirestore.getInstance(app).apply {
+                        val settings = FirebaseFirestoreSettings.Builder()
+                            .setPersistenceEnabled(true)
+                            .build()
+                        firestoreSettings = settings
+                    }
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Firebase Firestore init exception: ${e.message}")
+                null
             }
-        } catch (e: Exception) {
-            Log.w(TAG, "FirebaseApp might not be initialized yet: ${e.message}")
-            null
         }
     }
 
@@ -145,7 +179,7 @@ class FirestoreWashRepository(
         branchId: String = DEFAULT_BRANCH
     ): Result<String> {
         val collection = getTransactionsCollection(branchId)
-            ?: return Result.failure(IllegalStateException("Firebase Firestore belum diinisialisasi"))
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         val docId = "wash_${record.timestamp}"
         return try {
@@ -168,7 +202,7 @@ class FirestoreWashRepository(
         branchId: String = DEFAULT_BRANCH
     ): Result<Unit> {
         val collection = getTransactionsCollection(branchId)
-            ?: return Result.failure(IllegalStateException("Firebase Firestore belum diinisialisasi"))
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         val docId = "wash_${record.timestamp}"
         return try {
@@ -201,7 +235,7 @@ class FirestoreWashRepository(
         branchId: String = DEFAULT_BRANCH
     ): Result<Unit> {
         val collection = getTransactionsCollection(branchId)
-            ?: return Result.failure(IllegalStateException("Firebase Firestore belum diinisialisasi"))
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         return try {
             val data = record.toFirestoreMap(documentId = documentId)
@@ -222,7 +256,7 @@ class FirestoreWashRepository(
         branchId: String = DEFAULT_BRANCH
     ): Result<Unit> {
         val collection = getTransactionsCollection(branchId)
-            ?: return Result.failure(IllegalStateException("Firebase Firestore belum diinisialisasi"))
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         return try {
             collection.document(documentId).delete().awaitTask()
@@ -242,7 +276,7 @@ class FirestoreWashRepository(
         branchId: String = DEFAULT_BRANCH
     ): Result<Int> {
         val firestore = firestoreInstance
-            ?: return Result.failure(IllegalStateException("Firebase Firestore belum diinisialisasi"))
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         val collection = getTransactionsCollection(branchId)
             ?: return Result.failure(IllegalStateException("Collection tidak ditemukan"))
@@ -267,7 +301,7 @@ class FirestoreWashRepository(
      */
     suspend fun clearAllRemoteTransactions(branchId: String = DEFAULT_BRANCH): Result<Unit> {
         val collection = getTransactionsCollection(branchId)
-            ?: return Result.failure(IllegalStateException("Firebase Firestore belum diinisialisasi"))
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         return try {
             val snapshot = collection.get().awaitTask()
