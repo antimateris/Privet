@@ -27,6 +27,14 @@ data class CloudWashRecord(
 )
 
 /**
+ * Shared app maintenance/lock status, synced across all devices via Firestore.
+ */
+data class MaintenanceStatusData(
+    val enabled: Boolean = false,
+    val message: String = "Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti."
+)
+
+/**
  * Repository class for Firebase Firestore handling real-time synchronization
  * of motor wash transactions for PT. LION STEAM MOTOR.
  */
@@ -41,6 +49,7 @@ class FirestoreWashRepository(
         private const val COLLECTION_TRANSACTIONS = "transactions"
         private const val COLLECTION_SETTINGS = "settings"
         private const val DOC_ACCOUNTS = "account_credentials"
+        private const val DOC_APP_STATUS = "app_status"
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
@@ -98,6 +107,13 @@ class FirestoreWashRepository(
             ?.document(branchId)
             ?.collection(COLLECTION_SETTINGS)
             ?.document(DOC_ACCOUNTS)
+
+    private fun getAppStatusDoc(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_SETTINGS)
+            ?.document(DOC_APP_STATUS)
 
     /**
      * Checks if Firestore is ready and available in the current environment.
@@ -368,6 +384,57 @@ class FirestoreWashRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to sync account fields", e)
+            Result.failure(e)
+        }
+    }
+
+    // --- Maintenance Mode (remote app lock, controlled by the Pemilik/Owner) ---
+
+    /**
+     * Listens in real-time to the shared app status document. When another device (or this one)
+     * turns maintenance mode on/off, every connected device reflects it within seconds.
+     * Emits enabled=false by default if the document doesn't exist yet or Firestore is offline.
+     */
+    fun listenMaintenanceStatus(branchId: String = DEFAULT_BRANCH): Flow<MaintenanceStatusData> {
+        val doc = getAppStatusDoc(branchId) ?: return flowOf(MaintenanceStatusData())
+
+        return callbackFlow {
+            val listenerRegistration = doc.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Listen maintenance status failed", error)
+                    return@addSnapshotListener
+                }
+                val enabled = snapshot?.getBoolean("enabled") ?: false
+                val message = snapshot?.getString("message")
+                    ?: "Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti."
+                trySend(MaintenanceStatusData(enabled = enabled, message = message))
+            }
+            awaitClose { listenerRegistration.remove() }
+        }
+    }
+
+    /**
+     * Turns maintenance mode on or off for all devices sharing this branch.
+     */
+    suspend fun setMaintenanceStatus(
+        enabled: Boolean,
+        message: String,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val doc = getAppStatusDoc(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        return try {
+            val data = hashMapOf(
+                "enabled" to enabled,
+                "message" to message,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            doc.set(data).awaitTask()
+            Log.d(TAG, "Maintenance mode set to $enabled")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to set maintenance status", e)
             Result.failure(e)
         }
     }
