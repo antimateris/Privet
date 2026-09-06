@@ -42,51 +42,50 @@ class FirestoreWashRepository(
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
-    private val firestoreInstance: FirebaseFirestore? by lazy {
-        injectedFirestore ?: run {
-            try {
-                val app = try {
-                    FirebaseApp.getInstance()
-                } catch (_: Exception) {
-                    val ctx = context
-                    if (ctx != null) {
+    private fun getFirestore(): FirebaseFirestore? {
+        if (injectedFirestore != null) return injectedFirestore
+        return try {
+            val app = try {
+                FirebaseApp.getInstance()
+            } catch (_: Exception) {
+                val ctx = context
+                if (ctx != null) {
+                    try {
+                        FirebaseApp.initializeApp(ctx)
+                    } catch (_: Exception) {
                         try {
-                            FirebaseApp.initializeApp(ctx)
+                            val options = FirebaseOptions.Builder()
+                                .setApplicationId("1:507656640500:android:2f53f7fe6b8260fcae8ba1")
+                                .setApiKey("AIzaSyCN7hfhHO6VZQttNc2TKc6aHls1ZjSr_GU")
+                                .setProjectId("lion-steam-motor-e8eb3")
+                                .setStorageBucket("lion-steam-motor-e8eb3.firebasestorage.app")
+                                .build()
+                            FirebaseApp.initializeApp(ctx, options)
                         } catch (_: Exception) {
-                            try {
-                                val options = FirebaseOptions.Builder()
-                                    .setApplicationId("1:507656640500:android:2f53f7fe6b8260fcae8ba1")
-                                    .setApiKey("AIzaSyCN7hfhHO6VZQttNc2TKc6aHls1ZjSr_GU")
-                                    .setProjectId("lion-steam-motor-e8eb3")
-                                    .setStorageBucket("lion-steam-motor-e8eb3.firebasestorage.app")
-                                    .build()
-                                FirebaseApp.initializeApp(ctx, options)
-                            } catch (_: Exception) {
-                                null
-                            }
+                            null
                         }
-                    } else null
-                }
-
-                if (app != null) {
-                    FirebaseFirestore.getInstance(app).apply {
-                        val settings = FirebaseFirestoreSettings.Builder()
-                            .setPersistenceEnabled(true)
-                            .build()
-                        firestoreSettings = settings
                     }
-                } else {
-                    null
+                } else null
+            }
+
+            if (app != null) {
+                FirebaseFirestore.getInstance(app).apply {
+                    val settings = FirebaseFirestoreSettings.Builder()
+                        .setPersistenceEnabled(true)
+                        .build()
+                    firestoreSettings = settings
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Firebase Firestore init exception: ${e.message}")
+            } else {
                 null
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Firebase Firestore init exception: ${e.message}")
+            null
         }
     }
 
     private fun getTransactionsCollection(branchId: String = DEFAULT_BRANCH) =
-        firestoreInstance
+        getFirestore()
             ?.collection(COLLECTION_BRANCHES)
             ?.document(branchId)
             ?.collection(COLLECTION_TRANSACTIONS)
@@ -94,7 +93,7 @@ class FirestoreWashRepository(
     /**
      * Checks if Firestore is ready and available in the current environment.
      */
-    fun isAvailable(): Boolean = firestoreInstance != null
+    fun isAvailable(): Boolean = getFirestore() != null
 
     /**
      * Listens to real-time transaction updates from Firestore ordered by timestamp descending.
@@ -275,7 +274,7 @@ class FirestoreWashRepository(
         records: List<WashRecord>,
         branchId: String = DEFAULT_BRANCH
     ): Result<Int> {
-        val firestore = firestoreInstance
+        val firestore = getFirestore()
             ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
         val collection = getTransactionsCollection(branchId)
@@ -303,10 +302,12 @@ class FirestoreWashRepository(
         val collection = getTransactionsCollection(branchId)
             ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
+        val firestore = getFirestore()
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
         return try {
             val snapshot = collection.get().awaitTask()
-            val batch = firestoreInstance?.batch()
-                ?: return Result.failure(IllegalStateException("Batch tidak tersedia"))
+            val batch = firestore.batch()
             for (doc in snapshot.documents) {
                 batch.delete(doc.reference)
             }

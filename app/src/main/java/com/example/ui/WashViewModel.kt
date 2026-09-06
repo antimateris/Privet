@@ -1251,9 +1251,16 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             res.onSuccess { count ->
                 _cloudSyncStatus.value = "Tersinkron • $count transaksi di cloud"
                 onComplete(count, "Berhasil menyinkronkan $count transaksi ke Cloud")
-            }.onFailure { _ ->
+            }.onFailure { err ->
+                val errorMsg = err.message ?: ""
+                val isPermission = errorMsg.contains("PERMISSION_DENIED", ignoreCase = true)
+                val userMsg = if (isPermission) {
+                    "Firebase terhubung, namun aturan akses Firestore Rules belum dibuka (Permission Denied). Data transaksi tetap aman di HP."
+                } else {
+                    "Koneksi Cloud tertunda (${err.localizedMessage ?: "Cek koneksi internet"}). Data transaksi aman di HP."
+                }
                 _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
-                onComplete(records.size, "Mode lokal aktif: ${records.size} transaksi aman tersimpan di HP")
+                onComplete(0, userMsg)
             }
         }
     }
