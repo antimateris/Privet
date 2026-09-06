@@ -260,6 +260,401 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         val database = AppDatabase.getDatabase(application)
         repository = WashRepository(database.washDao())
 
+        // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                // Tracks the set of timestamps we last saw in the cloud, so we can tell the
+                // difference between "not synced to cloud yet" (keep it) and
+                // "was in the cloud before, now gone -> deleted on another device" (remove it).
+                var previousRemoteTimestamps: Set<Long>? = null
+                try {
+                    firestoreRepository.listenTransactions().collect { remoteRecords ->
+                        val remoteTimestamps = remoteRecords.map { it.timestamp }.toSet()
+                        val local = repository.getAllRecords().first()
+                        val localTimestamps = local.map { it.timestamp }.toSet()
+
+                        // Add records that exist in the cloud but not yet locally.
+                        var newlyAdded = 0
+                        for (remote in remoteRecords) {
+                            if (remote.timestamp !in localTimestamps) {
+                                repository.insertRecord(remote)
+                                newlyAdded++
+                            }
+                        }
+
+                        // Remove local records that used to exist in the cloud but have since
+                        // been deleted from another device. We only do this once we have a
+                        // previous snapshot to compare against, so brand-new local records that
+                        // simply haven't finished uploading yet are never mistakenly deleted.
+                        var removedLocally = 0
+                        val knownBefore = previousRemoteTimestamps
+                        if (knownBefore != null) {
+                            val removedFromCloud = knownBefore - remoteTimestamps
+                            if (removedFromCloud.isNotEmpty()) {
+                                val toDelete = local.filter { it.timestamp in removedFromCloud }
+                                for (rec in toDelete) {
+                                    repository.deleteRecord(rec)
+                                    removedLocally++
+                                }
+                            }
+                        }
+                        previousRemoteTimestamps = remoteTimestamps
+
+                        _cloudSyncStatus.value = if (remoteRecords.isNotEmpty() || removedLocally > 0) {
+                            "Real-time aktif • ${remoteRecords.size} transaksi di cloud"
+                        } else {
+                            "Real-time aktif • Belum ada transaksi di cloud"
+                        }
+                    }
+                } catch (_: Exception) {
+                    _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                }
+            }
+
+            // Automatic Periodic Sync every 5 minutes (Auto-sync 5 menit)
+            viewModelScope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    delay(5 * 60 * 1000L) // 5 minutes
+                    try {
+                        val records = repository.getAllRecords().first()
+                        if (records.isNotEmpty()) {
+                            firestoreRepository.batchUploadLocalRecords(records)
+                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            _cloudSyncStatus.value = "Auto-sync 5 mnt • Terakhir: $timeStr"
+                        }
+                    } catch (_: Exception) {
+                        // Ignore transient network failures
+                    }
+                }
+            }
+        } else {
+            _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+        }
+    }
+
+    val activeWorkers: StateFlow<List<Worker>> = repository.getActiveWorkers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val allRecords: StateFlow<List<WashRecord>> = repository.getAllRecords()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Map of "yyyy-MM-dd" to DayRevenueSummary for fast calendar indicators
+    val dailySummariesMap: StateFlow<Map<String, DayRevenueSummary>> = allRecords.map { records ->
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val map = mutableMapOf<String, DayRevenueSummary>()
+        for (r in records) {
+            val key = sdf.format(Date(r.timestamp))
+            val prev = map[key]
+            if (prev == null) {
+                map[key] = DayRevenueSummary(
+                    dateMillis = r.timestamp,
+                    motorCount = r.motorCount,
+                    totalRevenue = r.totalPrice,
+                    totalOwnerShare = r.totalOwnerShare
+                )
+            } else {
+                map[key] = prev.copy(
+                    motorCount = prev.motorCount + r.motorCount,
+                    totalRevenue = prev.totalRevenue + r.totalPrice,
+                    totalOwnerShare = prev.totalOwnerShare + r.totalOwnerShare
+                )
+            }
+        }
+        map
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // Combined filtered records based on time period, custom date, and search query
+    val filteredRecords: StateFlow<List<WashRecord>> = combine(
+        allRecords,
+        _selectedPeriod,
+        _selectedDateMillis,
+        _searchQuery
+    ) { records, period, customDate, query ->
+        val (start, end) = FormatUtils.getPeriodTimestampRange(period, customDate)
+        val periodFiltered = records.filter { it.timestamp in start..end }
+        if (query.isBlank()) {
+            periodFiltered
+        } else {
+            val q = query.trim().lowercase()
+            periodFiltered.filter { record ->
+                record.licensePlate.lowercase().contains(q) ||
+                record.washerName.lowercase().contains(q) ||
+                record.note.lowercase().contains(q) ||
+                record.motorType.lowercase().contains(q)
+            }
+        }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Summary calculation for the active period
+    val financialSummary: StateFlow<WashFinancialSummary> = filteredRecords.combine(_selectedPeriod) { records, _ ->
+        var motors = 0
+        var gross = 0L
+        var washer = 0L
+        var owner = 0L
+        var disputedCount = 0
+        var disputedAmt = 0L
+
+        for (item in records) {
+            if (item.validationStatus == "DISPUTED") {
+                disputedCount += item.motorCount
+                disputedAmt += item.totalPrice
+            }
+            motors += item.motorCount
+            gross += item.totalPrice
+            washer += item.totalWasherShare
+            owner += item.totalOwnerShare
+        }
+
+        WashFinancialSummary(
+            totalMotors = motors,
+            totalGrossRevenue = gross,
+            totalWasherShare = washer,
+            totalOwnerShare = owner,
+            disputedMotors = disputedCount,
+            disputedAmount = disputedAmt
+        )
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WashFinancialSummary())
+
+    // Washer share breakdown
+    val washerBreakdowns: StateFlow<List<WasherShareBreakdown>> = filteredRecords.combine(_selectedPeriod) { records, _ ->
+        val mapCount = mutableMapOf<String, Int>()
+        val mapShare = mutableMapOf<String, Long>()
+
+        for (item in records) {
+            val name = if (item.washerName.isBlank()) "Tanpa Petugas" else item.washerName
+            mapCount[name] = (mapCount[name] ?: 0) + item.motorCount
+            mapShare[name] = (mapShare[name] ?: 0L) + item.totalWasherShare
+        }
+
+        mapCount.map { (name, count) ->
+            WasherShareBreakdown(
+                washerName = name,
+                motorCount = count,
+                totalShare = mapShare[name] ?: 0L
+            )
+        }.sortedByDescending { it.motorCount }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // In-depth revenue and performance analysis
+    val revenueAnalysis: StateFlow<RevenueAnalysisData> = combine(
+        filteredRecords,
+        _selectedPeriod
+    ) { records, period ->
+        computeRevenueAnalysis(records, period)
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RevenueAnalysisData())
+
+    // Monthly Recap and Summary Data
+    val monthlySummaryData: StateFlow<MonthlySummaryData> = combine(
+        allRecords,
+        _monthlyRecapYear,
+        _monthlyRecapMonth
+    ) { records, year, month ->
+        val monthNames = listOf(
+            "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        )
+        val dayNames = listOf("Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu")
+
+        val calStart = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val maxDays = calStart.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+        val calEnd = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, maxDays)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+
+        val startMillis = calStart.timeInMillis
+        val endMillis = calEnd.timeInMillis
+
+        val monthRecords = records.filter { it.timestamp in startMillis..endMillis }
+
+        val sdfKey = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val sdfDay = SimpleDateFormat("EEEE", Locale("id", "ID"))
+
+        val recordsByDay = monthRecords.groupBy { r ->
+            val cal = Calendar.getInstance().apply     val motorCount: Int,
+    val totalRevenue: Long,
+    val totalOwnerShare: Long
+)
+
+data class MonthlyDayRecord(
+    val dayOfMonth: Int,
+    val dateMillis: Long,
+    val dateKey: String,
+    val dayName: String,
+    val motorCount: Int,
+    val grossRevenue: Long,
+    val washerShare: Long,
+    val ownerShare: Long,
+    val topWasherName: String = ""
+)
+
+data class MonthlyWasherStat(
+    val washerName: String,
+    val motorCount: Int,
+    val totalShare: Long,
+    val percentage: Float
+)
+
+data class MonthlySummaryData(
+    val year: Int,
+    val month: Int,
+    val monthName: String,
+    val totalMotors: Int,
+    val totalGrossRevenue: Long,
+    val totalWasherShare: Long,
+    val totalOwnerShare: Long,
+    val activeDaysCount: Int,
+    val daysInMonth: Int,
+    val averageDailyMotors: Float,
+    val averageDailyGross: Long,
+    val averageDailyOwnerShare: Long,
+    val peakDay: MonthlyDayRecord?,
+    val dailyBreakdown: List<MonthlyDayRecord>,
+    val washerStats: List<MonthlyWasherStat>,
+    val cashAmount: Long,
+    val qrisAmount: Long,
+    val transferAmount: Long
+)
+
+data class CompanyProfile(
+    val companyName: String = "PT. LION STEAM MOTOR",
+    val divisionName: String = "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
+    val companyAddress: String = "Kawasan Sentra Bisnis Otomotif Terpadu",
+    val companyPhone: String = "0812-3456-7890",
+    val legalRegNo: String = "AHU-0038912.AH.01.01 / NIB: 9120003482190",
+    val directorName: String = "Bpk. Mohamad Ricky, S.H. (Direktur Utama)",
+    val financeManagerName: String = "Muhamad Agung Kurniawan (Manajer Keuangan)",
+    val cashierName: String = "Admin / Kasir Operasional"
+)
+
+class WashViewModel(application: Application) : AndroidViewModel(application) {
+    private val repository: WashRepository
+
+    private val _selectedPeriod = MutableStateFlow(TimePeriod.HARI_INI)
+    val selectedPeriod: StateFlow<TimePeriod> = _selectedPeriod.asStateFlow()
+
+    private val _selectedDateMillis = MutableStateFlow(System.currentTimeMillis())
+    val selectedDateMillis: StateFlow<Long> = _selectedDateMillis.asStateFlow()
+
+    private val _monthlyRecapYear = MutableStateFlow(Calendar.getInstance().get(Calendar.YEAR))
+    val monthlyRecapYear: StateFlow<Int> = _monthlyRecapYear.asStateFlow()
+
+    private val _monthlyRecapMonth = MutableStateFlow(Calendar.getInstance().get(Calendar.MONTH))
+    val monthlyRecapMonth: StateFlow<Int> = _monthlyRecapMonth.asStateFlow()
+
+    private val _searchQuery = MutableStateFlow("")
+    val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
+
+    private val _selectedQuickWasher = MutableStateFlow("")
+    val selectedQuickWasher: StateFlow<String> = _selectedQuickWasher.asStateFlow()
+
+    private val firestoreRepository by lazy {
+        FirestoreWashRepository(context = getApplication<Application>())
+    }
+
+    private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
+    val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
+
+    private val userPrefs by lazy {
+        getApplication<Application>().getSharedPreferences("user_profile_prefs", Context.MODE_PRIVATE)
+    }
+
+    private val _currentUser = MutableStateFlow(loadCurrentUser())
+    val currentUser: StateFlow<CurrentUser> = _currentUser.asStateFlow()
+
+    private fun loadCurrentUser(): CurrentUser {
+        val roleStr = userPrefs.getString("user_role", UserRole.KASIR.name) ?: UserRole.KASIR.name
+        val role = try {
+            UserRole.valueOf(roleStr)
+        } catch (_: Exception) {
+            UserRole.KASIR
+        }
+        val defaultName = when (role) {
+            UserRole.KASIR -> "Kasir Utama"
+            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
+            UserRole.PEMILIK -> "Pemilik Usaha"
+        }
+        val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
+        return CurrentUser(name = name, role = role)
+    }
+
+    fun getAccountName(role: UserRole): String {
+        val defaultName = when (role) {
+            UserRole.KASIR -> "Kasir Utama"
+            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
+            UserRole.PEMILIK -> "Pemilik Usaha"
+        }
+        return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
+    }
+
+    fun getAccountPassword(role: UserRole): String {
+        return userPrefs.getString("account_pass_${role.name}", "1234") ?: "1234"
+    }
+
+    fun verifyPassword(role: UserRole, enteredPass: String): Boolean {
+        val saved = getAccountPassword(role)
+        return enteredPass.trim() == saved.trim()
+    }
+
+    fun switchUserRoleWithAuth(
+        targetRole: UserRole,
+        name: String,
+        passwordInput: String,
+        newPasswordInput: String? = null
+    ): Pair<Boolean, String> {
+        val savedPass = getAccountPassword(targetRole)
+        if (passwordInput.trim() != savedPass.trim()) {
+            return Pair(false, "Password salah untuk akun ${targetRole.title}!")
+        }
+
+        val finalName = name.ifBlank { getAccountName(targetRole) }.trim()
+        val finalPassword = if (!newPasswordInput.isNullOrBlank()) newPasswordInput.trim() else savedPass
+
+        userPrefs.edit()
+            .putString("user_role", targetRole.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${targetRole.name}", finalName)
+            .putString("account_pass_${targetRole.name}", finalPassword)
+            .apply()
+
+        _currentUser.value = CurrentUser(name = finalName, role = targetRole)
+        return Pair(true, "Berhasil masuk sebagai $finalName (${targetRole.title})")
+    }
+
+    fun switchUserRole(role: UserRole, name: String) {
+        val finalName = name.trim().ifBlank { getAccountName(role) }
+        val updated = CurrentUser(name = finalName, role = role)
+        _currentUser.value = updated
+        userPrefs.edit()
+            .putString("user_role", role.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${role.name}", finalName)
+            .apply()
+    }
+
+    init {
+        val database = AppDatabase.getDatabase(application)
+        repository = WashRepository(database.washDao())
+
                 // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
         if (firestoreRepository.isAvailable()) {
             viewModelScope.launch(Dispatchers.IO) {
