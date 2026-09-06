@@ -2,6 +2,7 @@ package com.example.ui.dialogs
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -9,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -19,19 +19,26 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Print
-import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -41,7 +48,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.example.data.model.ValidationState
 import com.example.data.model.WashRecord
 import com.example.util.ThermalReceiptUtils
 
@@ -51,22 +57,16 @@ fun ThermalReceiptDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val receiptText = remember(record) {
-        ThermalReceiptUtils.generateReceiptText(record)
-    }
+    var showEditInfo by remember { mutableStateOf(false) }
+    var receiptPhone by remember { mutableStateOf(ThermalReceiptUtils.getReceiptPhone(context)) }
+    var receiptCashier by remember { mutableStateOf(record.createdBy.ifBlank { "Kasir" }) }
 
-    val validationState = record.getValidationState()
-    val badgeColor = when (validationState) {
-        ValidationState.VALID_APPROVED -> Color(0xFF16A34A)
-        ValidationState.VALID_AUTO_24H -> Color(0xFF2563EB)
-        ValidationState.PENDING_REVIEW -> Color(0xFFD97706)
-        ValidationState.DISPUTED -> Color(0xFFDC2626)
-    }
-    val badgeText = when (validationState) {
-        ValidationState.VALID_APPROVED -> "Status: Valid (Disetujui)"
-        ValidationState.VALID_AUTO_24H -> "Status: Valid (Auto 24 Jam)"
-        ValidationState.PENDING_REVIEW -> "Status: Menunggu Verifikasi (${record.getRemainingVerificationHours()} jam)"
-        ValidationState.DISPUTED -> "Status: Disanggah Manager (${record.disputeReason})"
+    val receiptText = remember(record, receiptPhone, receiptCashier) {
+        ThermalReceiptUtils.generateReceiptText(
+            record = record,
+            phone = receiptPhone,
+            cashierName = receiptCashier
+        )
     }
 
     AlertDialog(
@@ -86,7 +86,7 @@ fun ThermalReceiptDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Cetak Struk Thermal",
+                        text = "Struk Pelanggan (Thermal)",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -101,22 +101,98 @@ fun ThermalReceiptDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Validation badge
+                // Settings Card: Ubah WA & Kasir
                 Surface(
-                    color = badgeColor.copy(alpha = 0.1f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, badgeColor.copy(alpha = 0.4f)),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = badgeText,
-                        color = badgeColor,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showEditInfo = !showEditInfo },
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (showEditInfo) "Tutup Pengaturan Struk" else "Ubah Nomor WA & Nama Kasir",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
+                            Icon(
+                                imageVector = if (showEditInfo) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        if (showEditInfo) {
+                            OutlinedTextField(
+                                value = receiptPhone,
+                                onValueChange = {
+                                    receiptPhone = it
+                                    ThermalReceiptUtils.saveReceiptPhone(context, it)
+                                },
+                                label = { Text("Nomor WA / Kontak Struk") },
+                                placeholder = { Text("Contoh: WA: 0812-3456-7890") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Phone,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("input_receipt_wa_phone")
+                            )
+
+                            OutlinedTextField(
+                                value = receiptCashier,
+                                onValueChange = {
+                                    receiptCashier = it
+                                },
+                                label = { Text("Nama Kasir pada Struk") },
+                                placeholder = { Text("Contoh: Kasir Utama, Budi") },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Default.Person,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("input_receipt_cashier")
+                            )
+
+                            Text(
+                                text = "Perubahan nomor WA akan otomatis disimpan untuk struk berikutnya.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 }
 
                 // Simulated Thermal Paper Roll
@@ -156,7 +232,12 @@ fun ThermalReceiptDialog(
             ) {
                 Button(
                     onClick = {
-                        ThermalReceiptUtils.shareToThermalPrinter(context, record)
+                        ThermalReceiptUtils.shareToThermalPrinter(
+                            context = context,
+                            record = record,
+                            phone = receiptPhone,
+                            cashierName = receiptCashier
+                        )
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -173,7 +254,12 @@ fun ThermalReceiptDialog(
                 ) {
                     OutlinedButton(
                         onClick = {
-                            ThermalReceiptUtils.printReceiptNative(context, record)
+                            ThermalReceiptUtils.printReceiptNative(
+                                context = context,
+                                record = record,
+                                phone = receiptPhone,
+                                cashierName = receiptCashier
+                            )
                         },
                         modifier = Modifier
                             .weight(1f)
@@ -184,19 +270,24 @@ fun ThermalReceiptDialog(
 
                     OutlinedButton(
                         onClick = {
-                            ThermalReceiptUtils.copyReceiptToClipboard(context, record)
+                            ThermalReceiptUtils.copyReceiptToClipboard(
+                                context = context,
+                                record = record,
+                                phone = receiptPhone,
+                                cashierName = receiptCashier
+                            )
                         },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("btn_copy_receipt")
                     ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Salin", fontSize = 12.sp)
+                        Text("Salin Teks", fontSize = 12.sp)
                     }
                 }
             }
         },
-        dismissButton = null
+        dismissButton = {}
     )
 }

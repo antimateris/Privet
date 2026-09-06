@@ -9,7 +9,6 @@ import android.print.PrintManager
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
-import com.example.data.model.ValidationState
 import com.example.data.model.WashRecord
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -21,6 +20,31 @@ object ThermalReceiptUtils {
     const val BUSINESS_ADDRESS = "Layanan Cuci Motor Salju & Semir Ban"
     const val BUSINESS_PHONE = "WA: 0812-3456-7890"
 
+    private const val PREFS_NAME = "thermal_receipt_prefs"
+    private const val KEY_RECEIPT_PHONE = "receipt_phone"
+
+    /**
+     * Retrieve the persistent WhatsApp/phone number for thermal receipts
+     */
+    fun getReceiptPhone(context: Context): String {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        return prefs.getString(KEY_RECEIPT_PHONE, BUSINESS_PHONE) ?: BUSINESS_PHONE
+    }
+
+    /**
+     * Save the persistent WhatsApp/phone number for thermal receipts
+     */
+    fun saveReceiptPhone(context: Context, phone: String) {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val cleaned = phone.trim()
+        val formatted = if (cleaned.isNotBlank() && !cleaned.startsWith("WA", ignoreCase = true) && cleaned.any { it.isDigit() }) {
+            "WA: $cleaned"
+        } else {
+            cleaned
+        }
+        prefs.edit().putString(KEY_RECEIPT_PHONE, formatted).apply()
+    }
+
     /**
      * Generates a 32-column monospace plain text receipt optimized for 58mm/80mm thermal printers.
      */
@@ -28,7 +52,8 @@ object ThermalReceiptUtils {
         record: WashRecord,
         businessName: String = BUSINESS_NAME,
         address: String = BUSINESS_ADDRESS,
-        phone: String = BUSINESS_PHONE
+        phone: String = BUSINESS_PHONE,
+        cashierName: String = record.createdBy
     ): String {
         val cleanBusinessName = businessName
             .replace("PT.", "", ignoreCase = true)
@@ -39,15 +64,9 @@ object ThermalReceiptUtils {
         val dateStr = sdf.format(Date(record.timestamp))
         val trxId = "TRX-${record.timestamp.toString().takeLast(6)}"
 
-        val statusLabel = when (record.getValidationState()) {
-            ValidationState.VALID_APPROVED -> "VALID (DISETUJUI)"
-            ValidationState.VALID_AUTO_24H -> "VALID (AUTO 24 JAM)"
-            ValidationState.PENDING_REVIEW -> "DALAM VERIFIKASI (24 JAM)"
-            ValidationState.DISPUTED -> "DISANGGAH: ${record.disputeReason.take(15)}"
-        }
-
         val plate = if (record.licensePlate.isNotBlank()) record.licensePlate else "-"
         val washer = if (record.washerName.isNotBlank()) record.washerName else "-"
+        val displayCashier = cashierName.ifBlank { record.createdBy.ifBlank { "Kasir" } }
 
         val lineSeparator = "--------------------------------"
         val doubleSeparator = "================================"
@@ -60,8 +79,7 @@ object ThermalReceiptUtils {
             appendLine(doubleSeparator)
             appendLine("No. Trx  : $trxId")
             appendLine("Waktu    : $dateStr")
-            appendLine("Kasir    : ${record.createdBy}")
-            appendLine("Status   : $statusLabel")
+            appendLine("Kasir    : $displayCashier")
             appendLine(lineSeparator)
             appendLine("Plat No  : $plate")
             appendLine("Tipe     : ${record.motorType}")
@@ -86,8 +104,15 @@ object ThermalReceiptUtils {
     /**
      * Share formatted receipt text directly to Bluetooth Thermal Printer apps (RawBT, ESC POS, etc.)
      */
-    fun shareToThermalPrinter(context: Context, record: WashRecord) {
-        val receiptText = generateReceiptText(record)
+    fun shareToThermalPrinter(
+        context: Context,
+        record: WashRecord,
+        businessName: String = BUSINESS_NAME,
+        address: String = BUSINESS_ADDRESS,
+        phone: String = getReceiptPhone(context),
+        cashierName: String = record.createdBy
+    ) {
+        val receiptText = generateReceiptText(record, businessName, address, phone, cashierName)
         val sendIntent = Intent(Intent.ACTION_SEND).apply {
             putExtra(Intent.EXTRA_TEXT, receiptText)
             type = "text/plain"
@@ -99,9 +124,16 @@ object ThermalReceiptUtils {
     /**
      * Copy receipt text to clipboard
      */
-    fun copyReceiptToClipboard(context: Context, record: WashRecord) {
+    fun copyReceiptToClipboard(
+        context: Context,
+        record: WashRecord,
+        businessName: String = BUSINESS_NAME,
+        address: String = BUSINESS_ADDRESS,
+        phone: String = getReceiptPhone(context),
+        cashierName: String = record.createdBy
+    ) {
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("Struk Thermal Lion Steam", generateReceiptText(record))
+        val clip = ClipData.newPlainText("Struk Thermal Lion Steam", generateReceiptText(record, businessName, address, phone, cashierName))
         clipboard.setPrimaryClip(clip)
         Toast.makeText(context, "Teks struk thermal berhasil disalin!", Toast.LENGTH_SHORT).show()
     }
@@ -109,9 +141,16 @@ object ThermalReceiptUtils {
     /**
      * Print receipt using Android Native PrintManager (supports WiFi thermal printers, Mopria, PDF)
      */
-    fun printReceiptNative(context: Context, record: WashRecord) {
+    fun printReceiptNative(
+        context: Context,
+        record: WashRecord,
+        businessName: String = BUSINESS_NAME,
+        address: String = BUSINESS_ADDRESS,
+        phone: String = getReceiptPhone(context),
+        cashierName: String = record.createdBy
+    ) {
         try {
-            val cleanBusinessName = BUSINESS_NAME
+            val cleanBusinessName = businessName
                 .replace("PT.", "", ignoreCase = true)
                 .replace("PT", "", ignoreCase = true)
                 .trim()
@@ -121,6 +160,7 @@ object ThermalReceiptUtils {
             val trxId = "TRX-${record.timestamp.toString().takeLast(6)}"
             val plate = if (record.licensePlate.isNotBlank()) record.licensePlate else "-"
             val washer = if (record.washerName.isNotBlank()) record.washerName else "-"
+            val displayCashier = cashierName.ifBlank { record.createdBy.ifBlank { "Kasir" } }
 
             val htmlContent = """
                 <!DOCTYPE html>
@@ -154,13 +194,13 @@ object ThermalReceiptUtils {
                 <body>
                     <div class="double-divider"></div>
                     <div class="text-center title">$cleanBusinessName</div>
-                    <div class="text-center subtitle">$BUSINESS_ADDRESS</div>
-                    <div class="text-center subtitle">$BUSINESS_PHONE</div>
+                    <div class="text-center subtitle">$address</div>
+                    <div class="text-center subtitle">$phone</div>
                     <div class="double-divider"></div>
 
                     <div>No. Trx: $trxId</div>
                     <div>Waktu  : $dateStr</div>
-                    <div>Kasir  : ${record.createdBy}</div>
+                    <div>Kasir  : $displayCashier</div>
                     <div class="divider"></div>
 
                     <div>Plat   : $plate</div>
