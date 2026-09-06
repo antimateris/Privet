@@ -50,7 +50,8 @@ data class WasherShareBreakdown(
 enum class UserRole(val title: String, val subtitle: String) {
     KASIR("Kasir (Operator)", "Input motor cuci & cetak struk"),
     MANAGER_KEUANGAN("Manager Keuangan", "Verifikasi, validasi & sanggah transaksi"),
-    PEMILIK("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan")
+    PEMILIK("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan"),
+    IT("IT / Teknisi", "Kelola mode maintenance & konfigurasi teknis sistem")
 }
 
 data class CurrentUser(
@@ -199,8 +200,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         }
         val defaultName = when (role) {
             UserRole.KASIR -> "Kasir Utama"
-            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
-            UserRole.PEMILIK -> "Pemilik Usaha"
+            UserRole.MANAGER_KEUANGAN -> "Pemilik Usaha"
+            UserRole.PEMILIK -> "Team IT"
+            UserRole.IT -> "Admin IT"
         }
         val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
         return CurrentUser(name = name, role = role)
@@ -209,8 +211,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     fun getAccountName(role: UserRole): String {
         val defaultName = when (role) {
             UserRole.KASIR -> "Kasir Utama"
-            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
-            UserRole.PEMILIK -> "Pemilik Usaha"
+            UserRole.MANAGER_KEUANGAN -> "Pemilik Usaha"
+            UserRole.PEMILIK -> "Team IT"
+            UserRole.IT -> "Admin IT"
         }
         return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
     }
@@ -275,16 +278,17 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Turns maintenance mode on or off for every device, gated behind the Pemilik (owner)
-     * password so a Kasir/Manager can't accidentally lock the whole app.
+     * Turns maintenance mode on or off for every device, gated behind the IT/Teknisi
+     * password only. Owner (Pemilik) intentionally cannot authorize this - maintenance
+     * mode is a technical/system control reserved for IT, not a business/financial one.
      */
     fun setMaintenanceMode(
         enabled: Boolean,
         message: String,
-        ownerPassword: String
+        itPassword: String
     ): Pair<Boolean, String> {
-        if (!verifyPassword(UserRole.PEMILIK, ownerPassword)) {
-            return Pair(false, "Password Pemilik salah!")
+        if (!verifyPassword(UserRole.IT, itPassword)) {
+            return Pair(false, "Password IT salah!")
         }
 
         val finalMessage = message.trim().ifBlank {
@@ -402,6 +406,42 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (_: Exception) {
                     // Ignore: account sync is best-effort, local credentials remain usable offline
+                }
+            }
+
+            // Listen for petugas (worker) list changes from any device: adding or deleting a
+            // petugas on one phone reflects on every other phone automatically.
+            viewModelScope.launch(Dispatchers.IO) {
+                var previousRemoteNames: Set<String>? = null
+                try {
+                    firestoreRepository.listenWorkers().collect { remoteWorkers ->
+                        val remoteNames = remoteWorkers.map { it.name }.toSet()
+                        val local = repository.getActiveWorkers().first()
+                        val localNames = local.map { it.name }.toSet()
+
+                        // Add petugas that exist in the cloud but not yet on this phone.
+                        for (remote in remoteWorkers) {
+                            if (remote.name !in localNames) {
+                                repository.insertWorker(remote)
+                            }
+                        }
+
+                        // Remove petugas locally that used to be in the cloud but were deleted
+                        // from another phone, once we have a previous snapshot to compare to.
+                        val knownBefore = previousRemoteNames
+                        if (knownBefore != null) {
+                            val removedFromCloud = knownBefore - remoteNames
+                            if (removedFromCloud.isNotEmpty()) {
+                                val toDelete = local.filter { it.name in removedFromCloud }
+                                for (w in toDelete) {
+                                    repository.deleteWorker(w)
+                                }
+                            }
+                        }
+                        previousRemoteNames = remoteNames
+                    }
+                } catch (_: Exception) {
+                    // Ignore: worker sync is best-effort, local petugas list remains usable offline
                 }
             }
 
@@ -1389,8 +1429,13 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     fun addWorker(name: String) {
         if (name.isBlank()) return
+        val worker = Worker(name = name.trim())
         viewModelScope.launch {
-            repository.insertWorker(Worker(name = name.trim()))
+            repository.insertWorker(worker)
+            // Push to Firestore so the new petugas shows up on every other phone too.
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.saveWorker(worker)
+            }
         }
     }
 
@@ -1399,6 +1444,10 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             repository.deleteWorker(worker)
             if (_selectedQuickWasher.value == worker.name) {
                 _selectedQuickWasher.value = ""
+            }
+            // Remove from Firestore so the deletion also reflects on every other phone.
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.deleteWorkerRemote(worker.name)
             }
         }
     }
