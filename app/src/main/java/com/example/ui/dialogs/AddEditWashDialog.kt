@@ -109,6 +109,18 @@ fun AddEditWashDialog(
     }
     var showDatePickerDialog by remember { mutableStateOf(false) }
 
+    // Resolves the timestamp to actually save: if the user left the date on "today" (i.e. never
+    // switched to Kemarin or a custom past date), we use the real current time at the moment
+    // Save is pressed instead of the stale time captured when the dialog was first opened. If the
+    // user explicitly picked "Kemarin" or a specific date, that choice is respected as-is.
+    fun resolveSaveTimestamp(): Long {
+        return if (FormatUtils.isToday(transactionTimestamp)) {
+            System.currentTimeMillis()
+        } else {
+            transactionTimestamp
+        }
+    }
+
     val pricePerMotor = pricePerMotorText.toLongOrNull() ?: 10000L
     val washerSharePerMotor = washerSharePerMotorText.toLongOrNull() ?: 5000L
     val totalPrice = pricePerMotor * motorCount
@@ -520,7 +532,7 @@ fun AddEditWashDialog(
                                 washerSharePerMotor,
                                 paymentMethod,
                                 note,
-                                transactionTimestamp,
+                                resolveSaveTimestamp(),
                                 false
                             )
                         },
@@ -541,7 +553,7 @@ fun AddEditWashDialog(
                                 washerSharePerMotor,
                                 paymentMethod,
                                 note,
-                                transactionTimestamp,
+                                resolveSaveTimestamp(),
                                 true
                             )
                         },
