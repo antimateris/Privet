@@ -1,20 +1,20 @@
 package com.example.ui.theme
 
 import android.os.Build
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme =
   darkColorScheme(
-    primary = OceanPrimaryDark,
-    secondary = OceanSecondaryDark,
-    tertiary = OceanTertiaryDark,
+    primary = PetrolPrimaryDark,
+    secondary = CitrusSecondaryDark,
+    tertiary = AmberTertiaryDark,
     background = DarkBackground,
     surface = DarkSurface,
     surfaceVariant = DarkSurfaceVariant
@@ -22,32 +22,34 @@ private val DarkColorScheme =
 
 private val LightColorScheme =
   lightColorScheme(
-    primary = OceanPrimary,
-    onPrimary = androidx.compose.ui.graphics.Color.White,
-    primaryContainer = OceanPrimaryContainer,
-    onPrimaryContainer = OnOceanPrimaryContainer,
-    secondary = OceanSecondary,
-    onSecondary = androidx.compose.ui.graphics.Color.White,
-    secondaryContainer = OceanSecondaryContainer,
-    onSecondaryContainer = OnOceanSecondaryContainer,
-    tertiary = OceanTertiary,
-    onTertiary = androidx.compose.ui.graphics.Color.White,
-    tertiaryContainer = OceanTertiaryContainer,
-    onTertiaryContainer = OnOceanTertiaryContainer,
-    background = SoftComfortBackground,
-    onBackground = DeepSlateOnSurface,
-    surface = CrispCardWhite,
-    onSurface = DeepSlateOnSurface,
-    surfaceVariant = SoftSurfaceVariant,
-    onSurfaceVariant = MutedSlateOnVariant,
-    outline = androidx.compose.ui.graphics.Color(0xFFCBD5E1),
-    outlineVariant = SoftBorderOutline
+    primary = PetrolPrimary,
+    onPrimary = Color.White,
+    primaryContainer = PetrolPrimaryContainer,
+    onPrimaryContainer = OnPetrolPrimaryContainer,
+    secondary = CitrusSecondary,
+    onSecondary = Color.White,
+    secondaryContainer = CitrusSecondaryContainer,
+    onSecondaryContainer = OnCitrusSecondaryContainer,
+    tertiary = AmberTertiary,
+    onTertiary = Color.White,
+    tertiaryContainer = AmberTertiaryContainer,
+    onTertiaryContainer = OnAmberTertiaryContainer,
+    background = PaperBackground,
+    onBackground = InkOnSurface,
+    surface = CardSurface,
+    onSurface = InkOnSurface,
+    surfaceVariant = SubtleSurfaceVariant,
+    onSurfaceVariant = MutedOnVariant,
+    outline = Color(0xFFB9C4C1),
+    outlineVariant = SoftBorderOutline,
+    error = ErrorRed,
+    errorContainer = ErrorRedContainer
   )
 
 @Composable
 fun MyApplicationTheme(
   darkTheme: Boolean = false,
-  // Keep consistent tailored comfortable white palette by default
+  // Keep the tailored "Steam & Shine" palette by default rather than the device's dynamic color
   dynamicColor: Boolean = false,
   content: @Composable () -> Unit,
 ) {
@@ -62,5 +64,10 @@ fun MyApplicationTheme(
       else -> LightColorScheme
     }
 
-  MaterialTheme(colorScheme = colorScheme, typography = Typography, content = content)
+  MaterialTheme(
+    colorScheme = colorScheme,
+    typography = Typography,
+    shapes = AppShapes,
+    content = content
+  )
 }
