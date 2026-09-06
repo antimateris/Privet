@@ -260,57 +260,56 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         val database = AppDatabase.getDatabase(application)
         repository = WashRepository(database.washDao())
 
-        // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
+                // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
         if (firestoreRepository.isAvailable()) {
             viewModelScope.launch(Dispatchers.IO) {
+                // Tracks the set of timestamps we last saw in the cloud, so we can tell the
+                // difference between "not synced to cloud yet" (keep it) and
+                // "was in the cloud before, now gone -> deleted on another device" (remove it).
+                var previousRemoteTimestamps: Set<Long>? = null
                 try {
                     firestoreRepository.listenTransactions().collect { remoteRecords ->
-                        if (remoteRecords.isNotEmpty()) {
-                            val local = repository.getAllRecords().first()
-                            val localTimestamps = local.map { it.timestamp }.toSet()
-                            var newlyAdded = 0
-                            for (remote in remoteRecords) {
-                                if (remote.timestamp !in localTimestamps) {
-                                    repository.insertRecord(remote)
-                                    newlyAdded++
+                        val remoteTimestamps = remoteRecords.map { it.timestamp }.toSet()
+                        val local = repository.getAllRecords().first()
+                        val localTimestamps = local.map { it.timestamp }.toSet()
+
+                        // Add records that exist in the cloud but not yet locally.
+                        var newlyAdded = 0
+                        for (remote in remoteRecords) {
+                            if (remote.timestamp !in localTimestamps) {
+                                repository.insertRecord(remote)
+                                newlyAdded++
+                            }
+                        }
+
+                        // Remove local records that used to exist in the cloud but have since
+                        // been deleted from another device. We only do this once we have a
+                        // previous snapshot to compare against, so brand-new local records that
+                        // simply haven't finished uploading yet are never mistakenly deleted.
+                        var removedLocally = 0
+                        val knownBefore = previousRemoteTimestamps
+                        if (knownBefore != null) {
+                            val removedFromCloud = knownBefore - remoteTimestamps
+                            if (removedFromCloud.isNotEmpty()) {
+                                val toDelete = local.filter { it.timestamp in removedFromCloud }
+                                for (rec in toDelete) {
+                                    repository.deleteRecord(rec)
+                                    removedLocally++
                                 }
                             }
-                            _cloudSyncStatus.value = "Real-time aktif • ${remoteRecords.size} transaksi di cloud"
+                        }
+                        previousRemoteTimestamps = remoteTimestamps
+
+                        _cloudSyncStatus.value = if (remoteRecords.isNotEmpty() || removedLocally > 0) {
+                            "Real-time aktif • ${remoteRecords.size} transaksi di cloud"
+                        } else {
+                            "Real-time aktif • Belum ada transaksi di cloud"
                         }
                     }
                 } catch (_: Exception) {
                     _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
                 }
             }
-
-            // Automatic Periodic Sync every 5 minutes (Auto-sync 5 menit)
-            viewModelScope.launch(Dispatchers.IO) {
-                while (isActive) {
-                    delay(5 * 60 * 1000L) // 5 minutes
-                    try {
-                        val records = repository.getAllRecords().first()
-                        if (records.isNotEmpty()) {
-                            firestoreRepository.batchUploadLocalRecords(records)
-                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                            _cloudSyncStatus.value = "Auto-sync 5 mnt • Terakhir: $timeStr"
-                        }
-                    } catch (_: Exception) {
-                        // Ignore transient network failures
-                    }
-                }
-            }
-        } else {
-            _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
-        }
-    }
-
-    val activeWorkers: StateFlow<List<Worker>> = repository.getActiveWorkers()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val allRecords: StateFlow<List<WashRecord>> = repository.getAllRecords()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    // Map of "yyyy-MM-dd" to DayRevenueSummary for fast calendar indicators
     val dailySummariesMap: StateFlow<Map<String, DayRevenueSummary>> = allRecords.map { records ->
         val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
         val map = mutableMapOf<String, DayRevenueSummary>()
