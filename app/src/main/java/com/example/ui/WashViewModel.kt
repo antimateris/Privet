@@ -242,6 +242,16 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             .apply()
 
         _currentUser.value = CurrentUser(name = finalName, role = targetRole)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.saveAccountFields(
+                mapOf(
+                    "${targetRole.name}_name" to finalName,
+                    "${targetRole.name}_pass" to finalPassword
+                )
+            )
+        }
+
         return Pair(true, "Berhasil masuk sebagai $finalName (${targetRole.title})")
     }
 
@@ -254,6 +264,10 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             .putString("user_name", finalName)
             .putString("account_name_${role.name}", finalName)
             .apply()
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.saveAccountFields(mapOf("${role.name}_name" to finalName))
+        }
     }
 
     init {
@@ -308,6 +322,36 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (_: Exception) {
                     _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                }
+            }
+
+            // Listen for account name/password changes made on other devices (Kasir/Manager/Owner)
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenAccountSettings().collect { fields ->
+                        if (fields == null) return@collect
+                        val editor = userPrefs.edit()
+                        var changedCurrentRole = false
+                        for (role in UserRole.values()) {
+                            val cloudName = fields["${role.name}_name"] as? String
+                            val cloudPass = fields["${role.name}_pass"] as? String
+                            if (cloudName != null && cloudName != userPrefs.getString("account_name_${role.name}", null)) {
+                                editor.putString("account_name_${role.name}", cloudName)
+                                if (role == _currentUser.value.role) changedCurrentRole = true
+                            }
+                            if (cloudPass != null) {
+                                editor.putString("account_pass_${role.name}", cloudPass)
+                            }
+                        }
+                        editor.apply()
+                        if (changedCurrentRole) {
+                            _currentUser.value = _currentUser.value.copy(
+                                name = getAccountName(_currentUser.value.role)
+                            )
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Ignore: account sync is best-effort, local credentials remain usable offline
                 }
             }
 
