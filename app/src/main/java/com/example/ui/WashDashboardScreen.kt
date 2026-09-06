@@ -5,6 +5,7 @@ import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.widget.Toast
+import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
+import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Business
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.CalendarToday
@@ -109,6 +111,7 @@ import com.example.ui.dialogs.EditDreamGoalDialog
 import com.example.ui.dialogs.EditPastDateRevenueDialog
 import com.example.ui.dialogs.ExportReportDialog
 import com.example.ui.dialogs.ManageWorkersDialog
+import com.example.ui.dialogs.MaintenanceModeDialog
 import com.example.ui.dialogs.PostSaveReceiptOptionDialog
 import com.example.ui.dialogs.SwitchUserDialog
 import com.example.ui.dialogs.ThermalReceiptDialog
@@ -143,6 +146,7 @@ fun WashDashboardScreen(
     val dailySummariesMap by viewModel.dailySummariesMap.collectAsStateWithLifecycle()
     val monthlySummary by viewModel.monthlySummaryData.collectAsStateWithLifecycle()
     val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
+    val maintenanceStatus by viewModel.maintenanceStatus.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
 
     var currentTab by remember { mutableStateOf(0) }
@@ -152,6 +156,7 @@ fun WashDashboardScreen(
     var showClearAllConfirm by remember { mutableStateOf(false) }
     var recordToDelete by remember { mutableStateOf<WashRecord?>(null) }
     var showMenu by remember { mutableStateOf(false) }
+    var showMaintenanceDialog by remember { mutableStateOf(false) }
     var showEditDreamGoalDialog by remember { mutableStateOf(false) }
     var showCalendarDialog by remember { mutableStateOf(false) }
     var showEditPastRevenueDialog by remember { mutableStateOf(false) }
@@ -320,6 +325,16 @@ fun WashDashboardScreen(
                         )
 
                         DropdownMenuItem(
+                            text = { Text("Mode Maintenance") },
+                            leadingIcon = { Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                showMenu = false
+                                showMaintenanceDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_maintenance_mode")
+                        )
+
+                        DropdownMenuItem(
                             text = {
                                 Text(
                                     when (currentTab) {
@@ -415,7 +430,12 @@ fun WashDashboardScreen(
             }
         }
     ) { innerPadding ->
-        if (currentTab == 0) {
+        Crossfade(
+            targetState = currentTab,
+            modifier = Modifier.fillMaxSize(),
+            label = "dashboard_tab_content"
+        ) { tab ->
+        if (tab == 0) {
             LazyColumn(
                 modifier = Modifier
                     .fillMaxSize()
@@ -1107,6 +1127,7 @@ fun WashDashboardScreen(
                     TransactionItemCard(
                         record = record,
                         currentUser = currentUser,
+                        modifier = Modifier.animateItem(),
                         onEdit = {
                             editingRecord = it
                             showAddEditDialog = true
@@ -1137,7 +1158,7 @@ fun WashDashboardScreen(
                 Spacer(modifier = Modifier.height(72.dp))
             }
         }
-    } else if (currentTab == 1) {
+    } else if (tab == 1) {
         MonthlyRecapScreen(
             viewModel = viewModel,
             monthlySummary = monthlySummary,
@@ -1150,7 +1171,7 @@ fun WashDashboardScreen(
             },
             modifier = Modifier.padding(innerPadding)
         )
-    } else if (currentTab == 2) {
+    } else if (tab == 2) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -1196,6 +1217,7 @@ fun WashDashboardScreen(
             },
             modifier = Modifier.padding(innerPadding)
         )
+    }
     }
 }
 
@@ -1458,6 +1480,17 @@ fun WashDashboardScreen(
                     }
                 }
                 result
+            }
+        )
+    }
+
+    // Dialog: Mode Maintenance (kunci aplikasi di semua HP, khusus Pemilik)
+    if (showMaintenanceDialog) {
+        MaintenanceModeDialog(
+            currentStatus = maintenanceStatus,
+            onDismiss = { showMaintenanceDialog = false },
+            onConfirm = { enabled, message, ownerPassword ->
+                viewModel.setMaintenanceMode(enabled, message, ownerPassword)
             }
         )
     }
