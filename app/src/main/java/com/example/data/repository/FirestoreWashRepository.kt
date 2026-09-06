@@ -3,6 +3,7 @@ package com.example.data.repository
 import android.content.Context
 import android.util.Log
 import com.example.data.model.WashRecord
+import com.example.data.model.Worker
 import com.google.android.gms.tasks.Task
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
@@ -47,6 +48,7 @@ class FirestoreWashRepository(
         const val DEFAULT_BRANCH = "lion_steam_pusat"
         private const val COLLECTION_BRANCHES = "branches"
         private const val COLLECTION_TRANSACTIONS = "transactions"
+        private const val COLLECTION_WORKERS = "workers"
         private const val COLLECTION_SETTINGS = "settings"
         private const val DOC_ACCOUNTS = "account_credentials"
         private const val DOC_APP_STATUS = "app_status"
@@ -100,6 +102,12 @@ class FirestoreWashRepository(
             ?.collection(COLLECTION_BRANCHES)
             ?.document(branchId)
             ?.collection(COLLECTION_TRANSACTIONS)
+
+    private fun getWorkersCollection(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_WORKERS)
 
     private fun getAccountSettingsDoc(branchId: String = DEFAULT_BRANCH) =
         getFirestore()
@@ -341,6 +349,133 @@ class FirestoreWashRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to clear all Firestore transactions", e)
+            Result.failure(e)
+        }
+    }
+
+    // --- Worker (Petugas) Sync (shared across devices, keyed by worker name) ---
+
+    /**
+     * Listens in real-time to the shared list of workers/petugas, so that adding or removing
+     * a worker on one device reflects on every other device connected to this branch.
+     */
+    fun listenWorkers(branchId: String = DEFAULT_BRANCH): Flow<List<Worker>> {
+        val collection = getWorkersCollection(branchId)
+            ?: return flowOf(emptyList())
+
+        return callbackFlow {
+            val listenerRegistration = collection
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e(TAG, "Listen workers failed", error)
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null) {
+                        val workers = snapshot.documents.mapNotNull { doc ->
+                            try {
+                                val name = doc.getString("name") ?: doc.id
+                                val isActive = doc.getBoolean("isActive") ?: true
+                                Worker(name = name, isActive = isActive)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error parsing worker doc ${doc.id}", e)
+                                null
+                            }
+                        }
+                        trySend(workers)
+                    }
+                }
+
+            awaitClose {
+                listenerRegistration.remove()
+            }
+        }
+    }
+
+    /**
+     * Saves (adds or updates) a worker/petugas in Firestore. The worker's (trimmed) name is
+     * used as the deterministic document ID so devices never end up with duplicate petugas.
+     */
+    suspend fun saveWorker(
+        worker: Worker,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val collection = getWorkersCollection(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        val docId = worker.name.trim()
+        if (docId.isBlank()) return Result.failure(IllegalArgumentException("Nama petugas kosong"))
+
+        return try {
+            val data = hashMapOf(
+                "name" to docId,
+                "isActive" to worker.isActive,
+                "updatedAt" to System.currentTimeMillis()
+            )
+            collection.document(docId).set(data).awaitTask()
+            Log.d(TAG, "Worker '$docId' synced to Firestore")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync worker '$docId'", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Deletes a worker/petugas from Firestore by name, so the removal reflects on all devices.
+     */
+    suspend fun deleteWorker(
+        name: String,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val collection = getWorkersCollection(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        val docId = name.trim()
+        return try {
+            collection.document(docId).delete().awaitTask()
+            Log.d(TAG, "Worker '$docId' deleted from Firestore")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete worker '$docId' from Firestore", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * Synchronizes a batch of local Room workers to Firestore (e.g. initial upload or migration
+     * for branches that had petugas added before cloud sync existed).
+     */
+    suspend fun batchUploadLocalWorkers(
+        workers: List<Worker>,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Int> {
+        val firestore = getFirestore()
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        val collection = getWorkersCollection(branchId)
+            ?: return Result.failure(IllegalStateException("Collection tidak ditemukan"))
+
+        return try {
+            val batch = firestore.batch()
+            for (worker in workers) {
+                val docId = worker.name.trim()
+                if (docId.isBlank()) continue
+                val docRef = collection.document(docId)
+                batch.set(
+                    docRef,
+                    hashMapOf(
+                        "name" to docId,
+                        "isActive" to worker.isActive,
+                        "updatedAt" to System.currentTimeMillis()
+                    )
+                )
+            }
+            batch.commit().awaitTask()
+            Log.d(TAG, "Batch synced ${workers.size} workers to Firestore")
+            Result.success(workers.size)
+        } catch (e: Exception) {
+            Log.e(TAG, "Batch worker sync failed", e)
             Result.failure(e)
         }
     }
