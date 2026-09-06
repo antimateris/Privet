@@ -8,6 +8,7 @@ import com.example.data.local.AppDatabase
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
 import com.example.data.repository.FirestoreWashRepository
+import com.example.data.repository.MaintenanceStatusData
 import com.example.data.repository.WashRepository
 import com.example.util.CorporateReportGenerator
 import com.example.util.FormatUtils
@@ -179,6 +180,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
+    private val _maintenanceStatus = MutableStateFlow(MaintenanceStatusData())
+    val maintenanceStatus: StateFlow<MaintenanceStatusData> = _maintenanceStatus.asStateFlow()
+
     private val userPrefs by lazy {
         getApplication<Application>().getSharedPreferences("user_profile_prefs", Context.MODE_PRIVATE)
     }
@@ -270,9 +274,55 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /**
+     * Turns maintenance mode on or off for every device, gated behind the Pemilik (owner)
+     * password so a Kasir/Manager can't accidentally lock the whole app.
+     */
+    fun setMaintenanceMode(
+        enabled: Boolean,
+        message: String,
+        ownerPassword: String
+    ): Pair<Boolean, String> {
+        if (!verifyPassword(UserRole.PEMILIK, ownerPassword)) {
+            return Pair(false, "Password Pemilik salah!")
+        }
+
+        val finalMessage = message.trim().ifBlank {
+            "Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti."
+        }
+
+        // Optimistic local update so the toggling device reacts instantly, even before the
+        // Firestore round-trip completes.
+        _maintenanceStatus.value = MaintenanceStatusData(enabled = enabled, message = finalMessage)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.setMaintenanceStatus(enabled, finalMessage)
+        }
+
+        return Pair(
+            true,
+            if (enabled) "Mode maintenance diaktifkan untuk semua perangkat" else "Mode maintenance dinonaktifkan"
+        )
+    }
+
     init {
         val database = AppDatabase.getDatabase(application)
         repository = WashRepository(database.washDao())
+
+        // Listen for maintenance mode changes from any device (works independently of the
+        // transaction sync block below, since it should still lock the app even if other
+        // Firestore features are having trouble).
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenMaintenanceStatus().collect { status ->
+                        _maintenanceStatus.value = status
+                    }
+                } catch (_: Exception) {
+                    // Ignore: if maintenance status can't be fetched, default to unlocked (false)
+                }
+            }
+        }
 
         // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
         if (firestoreRepository.isAvailable()) {
