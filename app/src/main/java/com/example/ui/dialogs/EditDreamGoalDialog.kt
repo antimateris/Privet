@@ -21,7 +21,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Store
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -52,21 +54,24 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.ui.DreamGoalConfig
 import com.example.ui.SavingsSource
+import com.example.ui.SavingsTargetFor
 import com.example.util.FormatUtils
 
 data class PresetDreamItem(
     val name: String,
     val price: Long,
-    val iconEmoji: String
+    val iconEmoji: String,
+    val targetFor: SavingsTargetFor = SavingsTargetFor.PEMILIK
 )
 
 val PRESET_DREAM_ITEMS = listOf(
-    PresetDreamItem("Kompresor Steam Matrix 2 HP", 2_200_000L, "💨"),
-    PresetDreamItem("Tabung Salju Snow Wash 20L", 850_000L, "🧼"),
-    PresetDreamItem("Mesin Steam Jet Cleaner High Pressure", 1_750_000L, "🚿"),
-    PresetDreamItem("HP Android Kasir & Mini Thermal Printer", 1_400_000L, "📱"),
-    PresetDreamItem("Renovasi Kanopi & Tempat Cuci", 3_500_000L, "🏗️"),
-    PresetDreamItem("Motor Operasional Antar-Jemput", 8_000_000L, "🛵")
+    PresetDreamItem("Kompresor Steam Matrix 2 HP", 2_200_000L, "💨", SavingsTargetFor.PEMILIK),
+    PresetDreamItem("Tabung Salju Snow Wash 20L", 850_000L, "🧼", SavingsTargetFor.PEMILIK),
+    PresetDreamItem("Bonus & Tabungan THR Karyawan", 3_000_000L, "👥", SavingsTargetFor.KARYAWAN),
+    PresetDreamItem("Mesin Steam Jet Cleaner High Pressure", 1_750_000L, "🚿", SavingsTargetFor.PEMILIK),
+    PresetDreamItem("Uang Kas / Tabungan Bersama Karyawan", 1_500_000L, "💰", SavingsTargetFor.KARYAWAN),
+    PresetDreamItem("HP Android Kasir & Mini Thermal Printer", 1_400_000L, "📱", SavingsTargetFor.PEMILIK),
+    PresetDreamItem("Renovasi Kanopi & Tempat Cuci", 3_500_000L, "🏗️", SavingsTargetFor.PEMILIK)
 )
 
 @Composable
@@ -80,6 +85,7 @@ fun EditDreamGoalDialog(
     var dailyTargetText by remember { mutableStateOf(currentConfig.dailyTargetAmount.toString()) }
     var initialSavingsText by remember { mutableStateOf(currentConfig.initialSavings.toString()) }
     var savingSource by remember { mutableStateOf(currentConfig.savingSource) }
+    var targetFor by remember { mutableStateOf(currentConfig.targetFor) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
@@ -128,12 +134,12 @@ fun EditDreamGoalDialog(
                         Spacer(modifier = Modifier.width(10.dp))
                         Column {
                             Text(
-                                text = "Atur Barang Impian",
+                                text = "Atur Target Tabungan",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                             Text(
-                                text = "Target tabungan dari omset harian",
+                                text = "Pilih peruntukan karyawan atau pemilik",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -145,9 +151,110 @@ fun EditDreamGoalDialog(
                     }
                 }
 
+                // Target Tabungan Untuk Siapa?
+                Text(
+                    text = "Peruntukan Target Tabungan:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    // Option Pemilik
+                    Card(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                targetFor = SavingsTargetFor.PEMILIK
+                                if (savingSource == SavingsSource.WASHER_SHARE) {
+                                    savingSource = SavingsSource.TOTAL_REVENUE
+                                }
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (targetFor == SavingsTargetFor.PEMILIK) Color(0xFFEFF6FF)
+                            else MaterialTheme.colorScheme.surface
+                        ),
+                        border = BorderStroke(
+                            if (targetFor == SavingsTargetFor.PEMILIK) 2.dp else 1.dp,
+                            if (targetFor == SavingsTargetFor.PEMILIK) Color(0xFF2563EB)
+                            else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Store,
+                                    contentDescription = null,
+                                    tint = if (targetFor == SavingsTargetFor.PEMILIK) Color(0xFF2563EB) else Color.Gray,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Pemilik Usaha",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (targetFor == SavingsTargetFor.PEMILIK) Color(0xFF1E40AF) else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Investasi alat steam & renovasi",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    // Option Karyawan
+                    Card(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable {
+                                targetFor = SavingsTargetFor.KARYAWAN
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (targetFor == SavingsTargetFor.KARYAWAN) Color(0xFFF0FDF4)
+                            else MaterialTheme.colorScheme.surface
+                        ),
+                        border = BorderStroke(
+                            if (targetFor == SavingsTargetFor.KARYAWAN) 2.dp else 1.dp,
+                            if (targetFor == SavingsTargetFor.KARYAWAN) Color(0xFF16A34A)
+                            else MaterialTheme.colorScheme.outlineVariant
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Groups,
+                                    contentDescription = null,
+                                    tint = if (targetFor == SavingsTargetFor.KARYAWAN) Color(0xFF16A34A) else Color.Gray,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Karyawan Steam",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = if (targetFor == SavingsTargetFor.KARYAWAN) Color(0xFF166534) else MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Tabungan / THR disisihkan per omset",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+
                 // Preset Chips
                 Text(
-                    text = "Pilih Preset Barang Steam (Opsional):",
+                    text = "Pilih Contoh Barang / Target:",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -164,6 +271,7 @@ fun EditDreamGoalDialog(
                             onClick = {
                                 itemName = preset.name
                                 targetAmountText = preset.price.toString()
+                                targetFor = preset.targetFor
                             },
                             label = {
                                 Text("${preset.iconEmoji} ${preset.name}", fontSize = 12.sp)
@@ -176,8 +284,13 @@ fun EditDreamGoalDialog(
                 OutlinedTextField(
                     value = itemName,
                     onValueChange = { itemName = it },
-                    label = { Text("Nama Barang Impian") },
-                    placeholder = { Text("Misal: Kompresor Steam Matrix 2 HP") },
+                    label = { Text("Nama Target Tabungan / Barang") },
+                    placeholder = {
+                        Text(
+                            if (targetFor == SavingsTargetFor.KARYAWAN) "Misal: Bonus THR / Kas Karyawan"
+                            else "Misal: Kompresor Steam Matrix 2 HP"
+                        )
+                    },
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier
@@ -192,7 +305,7 @@ fun EditDreamGoalDialog(
                     onValueChange = { input ->
                         if (input.all { it.isDigit() }) targetAmountText = input
                     },
-                    label = { Text("Target Harga Barang (Rp)") },
+                    label = { Text("Nominal Target Tabungan (Rp)") },
                     supportingText = {
                         if (parsedTarget > 0) {
                             Text("Terbaca: ${FormatUtils.formatRupiah(parsedTarget)}")
@@ -236,8 +349,8 @@ fun EditDreamGoalDialog(
                     label = { Text("Tabungan Awal Tersimpan (Opsional)") },
                     supportingText = {
                         Text(
-                            if (parsedInitialSavings > 0) "Modal awal: ${FormatUtils.formatRupiah(parsedInitialSavings)}"
-                            else "Jika Anda sudah ada saldo tabungan sebelumnya"
+                            if (parsedInitialSavings > 0) "Saldo awal: ${FormatUtils.formatRupiah(parsedInitialSavings)}"
+                            else "Jika Anda sudah memiliki saldo tersimpan sebelumnya"
                         )
                     },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
@@ -248,7 +361,7 @@ fun EditDreamGoalDialog(
 
                 // Sumber Perhitungan
                 Text(
-                    text = "Basis Perhitungan Tabungan:",
+                    text = "Disisihkan Dari Sumber Pendapatan:",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold
                 )
@@ -314,7 +427,7 @@ fun EditDreamGoalDialog(
                     Button(
                         onClick = {
                             if (itemName.isBlank()) {
-                                errorMessage = "Nama barang tidak boleh kosong"
+                                errorMessage = "Nama target tidak boleh kosong"
                                 return@Button
                             }
                             val target = targetAmountText.toLongOrNull() ?: 0L
@@ -331,6 +444,7 @@ fun EditDreamGoalDialog(
                                     targetAmount = target,
                                     initialSavings = initial,
                                     savingSource = savingSource,
+                                    targetFor = targetFor,
                                     dailyTargetAmount = if (daily > 0) daily else 100_000L
                                 )
                             )

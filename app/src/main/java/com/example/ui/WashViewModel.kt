@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
+import com.example.data.repository.FirestoreWashRepository
 import com.example.data.repository.WashRepository
 import com.example.util.CorporateReportGenerator
 import com.example.util.FormatUtils
@@ -17,11 +18,14 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.ceil
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -31,7 +35,9 @@ data class WashFinancialSummary(
     val totalMotors: Int = 0,
     val totalGrossRevenue: Long = 0L,
     val totalWasherShare: Long = 0L,
-    val totalOwnerShare: Long = 0L
+    val totalOwnerShare: Long = 0L,
+    val disputedMotors: Int = 0,
+    val disputedAmount: Long = 0L
 )
 
 data class WasherShareBreakdown(
@@ -40,9 +46,26 @@ data class WasherShareBreakdown(
     val totalShare: Long
 )
 
+enum class UserRole(val title: String, val subtitle: String) {
+    KASIR("Kasir (Operator)", "Input motor cuci & cetak struk"),
+    MANAGER_KEUANGAN("Manager Keuangan", "Verifikasi, validasi & sanggah transaksi"),
+    PEMILIK("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan")
+}
+
+data class CurrentUser(
+    val name: String = "Kasir Utama",
+    val role: UserRole = UserRole.KASIR
+)
+
+enum class SavingsTargetFor(val label: String, val desc: String) {
+    PEMILIK("Untuk Pemilik Usaha", "Tabungan pengadaan inventaris/alat steam (kompresor, renovasi)"),
+    KARYAWAN("Untuk Karyawan / Pencuci", "Tabungan bersama / bonus kesejahteraan karyawan dari omset cuci")
+}
+
 enum class SavingsSource(val label: String, val shortDesc: String) {
-    TOTAL_REVENUE("Total Omset Harian", "Seluruh omset pendapatan cuci"),
-    OWNER_SHARE("Kas Bersih Pemilik", "Laba bersih bagian pemilik (50%)")
+    TOTAL_REVENUE("Total Omset Harian", "Disisihkan dari seluruh omset kotor cuci"),
+    OWNER_SHARE("Kas Bersih Pemilik", "Disisihkan dari laba bersih pemilik (50%)"),
+    WASHER_SHARE("Porsi Bagi Hasil Karyawan", "Disisihkan dari tabungan/jatah pencuci")
 }
 
 data class DreamGoalConfig(
@@ -50,6 +73,7 @@ data class DreamGoalConfig(
     val targetAmount: Long = 2_200_000L,
     val initialSavings: Long = 0L,
     val savingSource: SavingsSource = SavingsSource.TOTAL_REVENUE,
+    val targetFor: SavingsTargetFor = SavingsTargetFor.PEMILIK,
     val dailyTargetAmount: Long = 100_000L
 )
 
@@ -117,13 +141,13 @@ data class MonthlySummaryData(
 )
 
 data class CompanyProfile(
-    val companyName: String = "PT. KILAU MOTOR GEMILANG",
+    val companyName: String = "PT. LION STEAM MOTOR",
     val divisionName: String = "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
     val companyAddress: String = "Kawasan Sentra Bisnis Otomotif Terpadu",
     val companyPhone: String = "0812-3456-7890",
     val legalRegNo: String = "AHU-0038912.AH.01.01 / NIB: 9120003482190",
-    val directorName: String = "Bpk. Hendra Gunawan, S.E. (Direktur Utama)",
-    val financeManagerName: String = "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)",
+    val directorName: String = "Bpk. Mohamad Ricky, S.H. (Direktur Utama)",
+    val financeManagerName: String = "Muhamad Agung Kurniawan (Manajer Keuangan)",
     val cashierName: String = "Admin / Kasir Operasional"
 )
 
@@ -148,9 +172,132 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedQuickWasher = MutableStateFlow("")
     val selectedQuickWasher: StateFlow<String> = _selectedQuickWasher.asStateFlow()
 
+    private val firestoreRepository = FirestoreWashRepository()
+
+    private val _cloudSyncStatus = MutableStateFlow("Sinkronisasi Cloud Aktif")
+    val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
+
+    private val userPrefs by lazy {
+        getApplication<Application>().getSharedPreferences("user_profile_prefs", Context.MODE_PRIVATE)
+    }
+
+    private val _currentUser = MutableStateFlow(loadCurrentUser())
+    val currentUser: StateFlow<CurrentUser> = _currentUser.asStateFlow()
+
+    private fun loadCurrentUser(): CurrentUser {
+        val roleStr = userPrefs.getString("user_role", UserRole.KASIR.name) ?: UserRole.KASIR.name
+        val role = try {
+            UserRole.valueOf(roleStr)
+        } catch (_: Exception) {
+            UserRole.KASIR
+        }
+        val defaultName = when (role) {
+            UserRole.KASIR -> "Kasir Utama"
+            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
+            UserRole.PEMILIK -> "Pemilik Usaha"
+        }
+        val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
+        return CurrentUser(name = name, role = role)
+    }
+
+    fun getAccountName(role: UserRole): String {
+        val defaultName = when (role) {
+            UserRole.KASIR -> "Kasir Utama"
+            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
+            UserRole.PEMILIK -> "Pemilik Usaha"
+        }
+        return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
+    }
+
+    fun getAccountPassword(role: UserRole): String {
+        return userPrefs.getString("account_pass_${role.name}", "1234") ?: "1234"
+    }
+
+    fun verifyPassword(role: UserRole, enteredPass: String): Boolean {
+        val saved = getAccountPassword(role)
+        return enteredPass.trim() == saved.trim()
+    }
+
+    fun switchUserRoleWithAuth(
+        targetRole: UserRole,
+        name: String,
+        passwordInput: String,
+        newPasswordInput: String? = null
+    ): Pair<Boolean, String> {
+        val savedPass = getAccountPassword(targetRole)
+        if (passwordInput.trim() != savedPass.trim()) {
+            return Pair(false, "Password salah untuk akun ${targetRole.title}!")
+        }
+
+        val finalName = name.ifBlank { getAccountName(targetRole) }.trim()
+        val finalPassword = if (!newPasswordInput.isNullOrBlank()) newPasswordInput.trim() else savedPass
+
+        userPrefs.edit()
+            .putString("user_role", targetRole.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${targetRole.name}", finalName)
+            .putString("account_pass_${targetRole.name}", finalPassword)
+            .apply()
+
+        _currentUser.value = CurrentUser(name = finalName, role = targetRole)
+        return Pair(true, "Berhasil masuk sebagai $finalName (${targetRole.title})")
+    }
+
+    fun switchUserRole(role: UserRole, name: String) {
+        val finalName = name.trim().ifBlank { getAccountName(role) }
+        val updated = CurrentUser(name = finalName, role = role)
+        _currentUser.value = updated
+        userPrefs.edit()
+            .putString("user_role", role.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${role.name}", finalName)
+            .apply()
+    }
+
     init {
         val database = AppDatabase.getDatabase(application)
         repository = WashRepository(database.washDao())
+
+        // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenTransactions().collect { remoteRecords ->
+                        if (remoteRecords.isNotEmpty()) {
+                            val local = repository.getAllRecords().first()
+                            val localTimestamps = local.map { it.timestamp }.toSet()
+                            var newlyAdded = 0
+                            for (remote in remoteRecords) {
+                                if (remote.timestamp !in localTimestamps) {
+                                    repository.insertRecord(remote)
+                                    newlyAdded++
+                                }
+                            }
+                            _cloudSyncStatus.value = "Real-time aktif • ${remoteRecords.size} transaksi di cloud"
+                        }
+                    }
+                } catch (_: Exception) {
+                    _cloudSyncStatus.value = "Mode lokal aktif (offline)"
+                }
+            }
+
+            // Automatic Periodic Sync every 5 minutes (Auto-sync 5 menit)
+            viewModelScope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    delay(5 * 60 * 1000L) // 5 minutes
+                    try {
+                        val records = repository.getAllRecords().first()
+                        if (records.isNotEmpty()) {
+                            firestoreRepository.batchUploadLocalRecords(records)
+                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            _cloudSyncStatus.value = "Auto-sync 5 mnt • Terakhir: $timeStr"
+                        }
+                    } catch (_: Exception) {
+                        // Ignore transient network failures
+                    }
+                }
+            }
+        }
     }
 
     val activeWorkers: StateFlow<List<Worker>> = repository.getActiveWorkers()
@@ -214,8 +361,14 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         var gross = 0L
         var washer = 0L
         var owner = 0L
+        var disputedCount = 0
+        var disputedAmt = 0L
 
         for (item in records) {
+            if (item.validationStatus == "DISPUTED") {
+                disputedCount += item.motorCount
+                disputedAmt += item.totalPrice
+            }
             motors += item.motorCount
             gross += item.totalPrice
             washer += item.totalWasherShare
@@ -226,7 +379,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             totalMotors = motors,
             totalGrossRevenue = gross,
             totalWasherShare = washer,
-            totalOwnerShare = owner
+            totalOwnerShare = owner,
+            disputedMotors = disputedCount,
+            disputedAmount = disputedAmt
         )
     }.flowOn(Dispatchers.Default)
     .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WashFinancialSummary())
@@ -500,12 +655,19 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         } catch (_: Exception) {
             SavingsSource.TOTAL_REVENUE
         }
+        val targetForStr = prefs.getString("target_for", SavingsTargetFor.PEMILIK.name) ?: SavingsTargetFor.PEMILIK.name
+        val targetFor = try {
+            SavingsTargetFor.valueOf(targetForStr)
+        } catch (_: Exception) {
+            SavingsTargetFor.PEMILIK
+        }
         val dailyTarget = prefs.getLong("daily_target", 100_000L)
         return DreamGoalConfig(
             itemName = itemName,
             targetAmount = targetAmount,
             initialSavings = initialSavings,
             savingSource = source,
+            targetFor = targetFor,
             dailyTargetAmount = dailyTarget
         )
     }
@@ -517,6 +679,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             .putLong("target_amount", newConfig.targetAmount)
             .putLong("initial_savings", newConfig.initialSavings)
             .putString("source", newConfig.savingSource.name)
+            .putString("target_for", newConfig.targetFor.name)
             .putLong("daily_target", newConfig.dailyTargetAmount)
             .apply()
     }
@@ -530,13 +693,13 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadCompanyProfile(): CompanyProfile {
         return CompanyProfile(
-            companyName = companyPrefs.getString("company_name", "PT. KILAU MOTOR GEMILANG") ?: "PT. KILAU MOTOR GEMILANG",
+            companyName = companyPrefs.getString("company_name", "PT. LION STEAM MOTOR") ?: "PT. LION STEAM MOTOR",
             divisionName = companyPrefs.getString("division_name", "DIVISI OPERASIONAL & PERAWATAN KENDARAAN") ?: "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
             companyAddress = companyPrefs.getString("company_address", "Kawasan Sentra Bisnis Otomotif Terpadu") ?: "Kawasan Sentra Bisnis Otomotif Terpadu",
             companyPhone = companyPrefs.getString("company_phone", "0812-3456-7890") ?: "0812-3456-7890",
             legalRegNo = companyPrefs.getString("legal_reg_no", "AHU-0038912.AH.01.01 / NIB: 9120003482190") ?: "AHU-0038912.AH.01.01 / NIB: 9120003482190",
-            directorName = companyPrefs.getString("director_name", "Bpk. Hendra Gunawan, S.E. (Direktur Utama)") ?: "Bpk. Hendra Gunawan, S.E. (Direktur Utama)",
-            financeManagerName = companyPrefs.getString("finance_manager_name", "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)") ?: "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)",
+            directorName = companyPrefs.getString("director_name", "Bpk. Mohamad Ricky, S.H. (Direktur Utama)") ?: "Bpk. Mohamad Ricky, S.H. (Direktur Utama)",
+            financeManagerName = companyPrefs.getString("finance_manager_name", "Muhamad Agung Kurniawan (Manajer Keuangan)") ?: "Muhamad Agung Kurniawan (Manajer Keuangan)",
             cashierName = companyPrefs.getString("cashier_name", "Admin / Kasir Operasional") ?: "Admin / Kasir Operasional"
         )
     }
@@ -581,12 +744,22 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
         val todayGross = todayRecords.sumOf { it.totalPrice }
         val todayOwner = todayRecords.sumOf { it.totalOwnerShare }
+        val todayWasher = todayRecords.sumOf { it.totalWasherShare }
 
         val totalGross = records.sumOf { it.totalPrice }
         val totalOwner = records.sumOf { it.totalOwnerShare }
+        val totalWasher = records.sumOf { it.totalWasherShare }
 
-        val todayRev = if (config.savingSource == SavingsSource.TOTAL_REVENUE) todayGross else todayOwner
-        val totalAcc = if (config.savingSource == SavingsSource.TOTAL_REVENUE) totalGross else totalOwner
+        val todayRev = when (config.savingSource) {
+            SavingsSource.TOTAL_REVENUE -> todayGross
+            SavingsSource.OWNER_SHARE -> todayOwner
+            SavingsSource.WASHER_SHARE -> todayWasher
+        }
+        val totalAcc = when (config.savingSource) {
+            SavingsSource.TOTAL_REVENUE -> totalGross
+            SavingsSource.OWNER_SHARE -> totalOwner
+            SavingsSource.WASHER_SHARE -> totalWasher
+        }
 
         val totalSaved = config.initialSavings + totalAcc
         val remaining = (config.targetAmount - totalSaved).coerceAtLeast(0L)
@@ -859,9 +1032,12 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     totalOwnerShare = totalOwnerShare,
                     paymentMethod = paymentMethod,
                     note = note,
-                    timestamp = cal.timeInMillis
+                    timestamp = cal.timeInMillis,
+                    createdBy = _currentUser.value.name,
+                    validationStatus = "PENDING"
                 )
                 repository.insertRecord(record)
+                firestoreRepository.saveTransaction(record)
             }
 
             _selectedDateMillis.value = targetDateMillis
@@ -901,9 +1077,12 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 totalOwnerShare = totalOwnerShare,
                 paymentMethod = "Tunai",
                 note = "",
-                timestamp = timestamp
+                timestamp = timestamp,
+                createdBy = _currentUser.value.name,
+                validationStatus = "PENDING"
             )
             repository.insertRecord(record)
+            firestoreRepository.saveTransaction(record)
         }
     }
 
@@ -928,9 +1107,12 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 totalOwnerShare = totalOwnerShare,
                 paymentMethod = "Tunai",
                 note = "",
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                createdBy = _currentUser.value.name,
+                validationStatus = "PENDING"
             )
             repository.insertRecord(record)
+            firestoreRepository.saveTransaction(record)
         }
     }
 
@@ -944,53 +1126,126 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         washerSharePerMotor: Long,
         paymentMethod: String,
         note: String,
-        timestamp: Long = System.currentTimeMillis()
-    ) {
+        timestamp: Long = System.currentTimeMillis(),
+        existingRecord: WashRecord? = null
+    ): WashRecord {
+        val totalPrice = pricePerMotor * motorCount
+        val totalWasherShare = washerSharePerMotor * motorCount
+        val totalOwnerShare = totalPrice - totalWasherShare
+
+        val record = WashRecord(
+            id = id,
+            motorCount = motorCount,
+            licensePlate = licensePlate.trim().uppercase(),
+            motorType = motorType,
+            washerName = washerName.trim(),
+            pricePerMotor = pricePerMotor,
+            washerSharePerMotor = washerSharePerMotor,
+            totalPrice = totalPrice,
+            totalWasherShare = totalWasherShare,
+            totalOwnerShare = totalOwnerShare,
+            paymentMethod = paymentMethod,
+            note = note.trim(),
+            timestamp = timestamp,
+            createdBy = existingRecord?.createdBy ?: _currentUser.value.name,
+            validationStatus = existingRecord?.validationStatus ?: "PENDING",
+            disputeReason = existingRecord?.disputeReason ?: "",
+            disputedBy = existingRecord?.disputedBy ?: "",
+            disputedAt = existingRecord?.disputedAt ?: 0L
+        )
+
         viewModelScope.launch {
-            val totalPrice = pricePerMotor * motorCount
-            val totalWasherShare = washerSharePerMotor * motorCount
-            val totalOwnerShare = totalPrice - totalWasherShare
-
-            val record = WashRecord(
-                id = id,
-                motorCount = motorCount,
-                licensePlate = licensePlate.trim().uppercase(),
-                motorType = motorType,
-                washerName = washerName.trim(),
-                pricePerMotor = pricePerMotor,
-                washerSharePerMotor = washerSharePerMotor,
-                totalPrice = totalPrice,
-                totalWasherShare = totalWasherShare,
-                totalOwnerShare = totalOwnerShare,
-                paymentMethod = paymentMethod,
-                note = note.trim(),
-                timestamp = timestamp
-            )
-
-            if (id == 0L) {
+            val finalId = if (id == 0L) {
                 repository.insertRecord(record)
             } else {
                 repository.updateRecord(record)
+                id
             }
+            firestoreRepository.saveTransaction(record.copy(id = finalId))
+        }
+
+        return record
+    }
+
+    fun disputeTransaction(record: WashRecord, reason: String) {
+        viewModelScope.launch {
+            val updated = record.copy(
+                validationStatus = "DISPUTED",
+                disputeReason = reason.trim(),
+                disputedBy = _currentUser.value.name,
+                disputedAt = System.currentTimeMillis()
+            )
+            repository.updateRecord(updated)
+            firestoreRepository.saveTransaction(updated)
+        }
+    }
+
+    fun validateTransaction(record: WashRecord) {
+        viewModelScope.launch {
+            val updated = record.copy(
+                validationStatus = "VALID",
+                disputeReason = "",
+                disputedBy = "",
+                disputedAt = 0L
+            )
+            repository.updateRecord(updated)
+            firestoreRepository.saveTransaction(updated)
+        }
+    }
+
+    fun revokeDispute(record: WashRecord) {
+        viewModelScope.launch {
+            val updated = record.copy(
+                validationStatus = "PENDING",
+                disputeReason = "",
+                disputedBy = "",
+                disputedAt = 0L
+            )
+            repository.updateRecord(updated)
+            firestoreRepository.saveTransaction(updated)
         }
     }
 
     fun deleteRecord(record: WashRecord) {
         viewModelScope.launch {
             repository.deleteRecord(record)
+            firestoreRepository.deleteTransaction(record)
         }
     }
 
     fun deleteRecordsForDate(targetDateMillis: Long) {
         viewModelScope.launch {
             val (start, end) = FormatUtils.getDayTimestampRange(targetDateMillis)
+            val recordsToDelete = repository.getAllRecords().first().filter { it.timestamp in start..end }
             repository.deleteRecordsBetween(start, end)
+            for (rec in recordsToDelete) {
+                firestoreRepository.deleteTransaction(rec)
+            }
         }
     }
 
     fun clearAllRecords() {
         viewModelScope.launch {
             repository.deleteAllRecords()
+            firestoreRepository.clearAllRemoteTransactions()
+        }
+    }
+
+    fun syncAllLocalToCloud(onComplete: (Int, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val records = repository.getAllRecords().first()
+            if (records.isEmpty()) {
+                onComplete(0, "Tidak ada data transaksi lokal untuk diunggah")
+                return@launch
+            }
+            val res = firestoreRepository.batchUploadLocalRecords(records)
+            res.onSuccess { count ->
+                _cloudSyncStatus.value = "Tersinkron • $count transaksi di cloud"
+                onComplete(count, "Berhasil menyinkronkan $count transaksi ke Firestore")
+            }.onFailure { err ->
+                _cloudSyncStatus.value = "Gagal sinkron: ${err.message}"
+                onComplete(0, "Gagal sinkronisasi: ${err.message}")
+            }
         }
     }
 

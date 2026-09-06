@@ -567,12 +567,12 @@ fun EditCompanyProfileDialog(
                 onClick = {
                     onSave(
                         CompanyProfile(
-                            companyName = companyName.ifBlank { "PT. KILAU MOTOR GEMILANG" },
+                            companyName = companyName.ifBlank { "PT. LION STEAM MOTOR" },
                             divisionName = divisionName.ifBlank { "DIVISI OPERASIONAL & PERAWATAN KENDARAAN" },
                             legalRegNo = legalRegNo.ifBlank { "AHU-0038912.AH.01.01 / NIB: 9120003482190" },
                             companyAddress = companyAddress.ifBlank { "Kawasan Sentra Bisnis Otomotif Terpadu" },
-                            directorName = directorName.ifBlank { "Bpk. Hendra Gunawan, S.E. (Direktur Utama)" },
-                            financeManagerName = financeManagerName.ifBlank { "Ibu Siti Rahmawati, S.Ak. (Manajer Keuangan)" },
+                            directorName = directorName.ifBlank { "Bpk. Mohamad Ricky, S.H. (Direktur Utama)" },
+                            financeManagerName = financeManagerName.ifBlank { "Muhamad Agung Kurniawan (Manajer Keuangan)" },
                             cashierName = cashierName.ifBlank { "Admin / Kasir Operasional" }
                         )
                     )

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.AlertDialog
@@ -85,7 +86,8 @@ fun AddEditWashDialog(
         washerSharePerMotor: Long,
         paymentMethod: String,
         note: String,
-        timestamp: Long
+        timestamp: Long,
+        printImmediately: Boolean
     ) -> Unit
 ) {
     var motorCount by remember { mutableIntStateOf(initialRecord?.motorCount ?: 1) }
@@ -501,24 +503,80 @@ fun AddEditWashDialog(
             }
         },
         confirmButton = {
-            Button(
-                onClick = {
-                    onSave(
-                        initialRecord?.id ?: 0L,
-                        motorCount,
-                        licensePlate,
-                        motorType,
-                        selectedWorker,
-                        pricePerMotor,
-                        washerSharePerMotor,
-                        paymentMethod,
-                        note,
-                        transactionTimestamp
-                    )
-                },
-                modifier = Modifier.testTag("save_wash_button")
-            ) {
-                Text(if (initialRecord == null) "Simpan Transaksi" else "Perbarui")
+            if (initialRecord == null) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            onSave(
+                                0L,
+                                motorCount,
+                                licensePlate,
+                                motorType,
+                                selectedWorker,
+                                pricePerMotor,
+                                washerSharePerMotor,
+                                paymentMethod,
+                                note,
+                                transactionTimestamp,
+                                false
+                            )
+                        },
+                        modifier = Modifier.testTag("save_wash_button")
+                    ) {
+                        Text("Simpan Transaksi")
+                    }
+
+                    Button(
+                        onClick = {
+                            onSave(
+                                0L,
+                                motorCount,
+                                licensePlate,
+                                motorType,
+                                selectedWorker,
+                                pricePerMotor,
+                                washerSharePerMotor,
+                                paymentMethod,
+                                note,
+                                transactionTimestamp,
+                                true
+                            )
+                        },
+                        modifier = Modifier.testTag("save_and_print_wash_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Print,
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Simpan & Cetak")
+                    }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        onSave(
+                            initialRecord.id,
+                            motorCount,
+                            licensePlate,
+                            motorType,
+                            selectedWorker,
+                            pricePerMotor,
+                            washerSharePerMotor,
+                            paymentMethod,
+                            note,
+                            transactionTimestamp,
+                            false
+                        )
+                    },
+                    modifier = Modifier.testTag("save_wash_button")
+                ) {
+                    Text("Perbarui")
+                }
             }
         },
         dismissButton = {

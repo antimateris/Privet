@@ -26,6 +26,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Business
@@ -38,13 +39,16 @@ import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Today
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -100,10 +104,14 @@ import com.example.ui.components.TransactionItemCard
 import com.example.ui.components.WasherBreakdownCard
 import com.example.ui.dialogs.AddEditWashDialog
 import com.example.ui.dialogs.CalendarRevenueDialog
+import com.example.ui.dialogs.DisputeTransactionDialog
 import com.example.ui.dialogs.EditDreamGoalDialog
 import com.example.ui.dialogs.EditPastDateRevenueDialog
 import com.example.ui.dialogs.ExportReportDialog
 import com.example.ui.dialogs.ManageWorkersDialog
+import com.example.ui.dialogs.PostSaveReceiptOptionDialog
+import com.example.ui.dialogs.SwitchUserDialog
+import com.example.ui.dialogs.ThermalReceiptDialog
 import com.example.util.ExportUtils
 import com.example.util.FormatUtils
 import com.example.util.TimePeriod
@@ -134,6 +142,8 @@ fun WashDashboardScreen(
     val selectedDateMillis by viewModel.selectedDateMillis.collectAsStateWithLifecycle()
     val dailySummariesMap by viewModel.dailySummariesMap.collectAsStateWithLifecycle()
     val monthlySummary by viewModel.monthlySummaryData.collectAsStateWithLifecycle()
+    val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
 
     var currentTab by remember { mutableStateOf(0) }
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -146,6 +156,10 @@ fun WashDashboardScreen(
     var showCalendarDialog by remember { mutableStateOf(false) }
     var showEditPastRevenueDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
+    var showSwitchUserDialog by remember { mutableStateOf(false) }
+    var recordForThermalReceipt by remember { mutableStateOf<WashRecord?>(null) }
+    var savedRecordForReceiptOption by remember { mutableStateOf<WashRecord?>(null) }
+    var recordForDispute by remember { mutableStateOf<WashRecord?>(null) }
     var targetPastDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var targetPastSummary by remember { mutableStateOf<DayRevenueSummary?>(null) }
 
@@ -246,6 +260,22 @@ fun WashDashboardScreen(
                         Icon(Icons.Default.Group, contentDescription = "Kelola Petugas")
                     }
 
+                    // User Profile / Role Switcher
+                    IconButton(
+                        onClick = { showSwitchUserDialog = true },
+                        modifier = Modifier.testTag("appbar_user_profile_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "Ganti Akun",
+                            tint = when (currentUser.role) {
+                                UserRole.KASIR -> Color(0xFF0284C7)
+                                UserRole.MANAGER_KEUANGAN -> Color(0xFFD97706)
+                                UserRole.PEMILIK -> Color(0xFF16A34A)
+                            }
+                        )
+                    }
+
                     // More Menu
                     IconButton(onClick = { showMenu = true }) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
@@ -256,6 +286,16 @@ fun WashDashboardScreen(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
+                            text = { Text("Ganti Akun (${currentUser.name} - ${currentUser.role.title})") },
+                            leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = {
+                                showMenu = false
+                                showSwitchUserDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_switch_user")
+                        )
+
+                        DropdownMenuItem(
                             text = { Text("Laporan Resmi PT (PDF / CSV)") },
                             leadingIcon = { Icon(Icons.Default.Business, contentDescription = null, tint = Color(0xFF0F172A)) },
                             onClick = {
@@ -263,6 +303,20 @@ fun WashDashboardScreen(
                                 showExportDialog = true
                             },
                             modifier = Modifier.testTag("menu_export_corporate")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Sinkronkan ke Cloud (Firebase)") },
+                            leadingIcon = { Icon(Icons.Default.Sync, contentDescription = null, tint = Color(0xFF16A34A)) },
+                            onClick = {
+                                showMenu = false
+                                viewModel.syncAllLocalToCloud { _, msg ->
+                                    coroutineScope.launch {
+                                        snackbarHostState.showSnackbar(msg)
+                                    }
+                                }
+                            },
+                            modifier = Modifier.testTag("menu_sync_cloud")
                         )
 
                         DropdownMenuItem(
@@ -369,6 +423,179 @@ fun WashDashboardScreen(
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                // Section: Cloud Sync Status Banner (Real-time Firebase)
+                item {
+                    Surface(
+                        color = Color(0xFFF0FDF4),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, Color(0xFF86EFAC)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("cloud_sync_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFF16A34A))
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = cloudSyncStatus,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF166534),
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(
+                                onClick = {
+                                    viewModel.syncAllLocalToCloud { _, msg ->
+                                        coroutineScope.launch {
+                                            snackbarHostState.showSnackbar(msg)
+                                        }
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.testTag("cloud_sync_now_button")
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Default.Sync,
+                                        contentDescription = null,
+                                        tint = Color(0xFF166534),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        "Sinkronkan",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF166534)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section: Active User Account Status
+                item {
+                    Surface(
+                        color = when (currentUser.role) {
+                            UserRole.KASIR -> Color(0xFFF0F9FF)
+                            UserRole.MANAGER_KEUANGAN -> Color(0xFFFFFBEB)
+                            UserRole.PEMILIK -> Color(0xFFF0FDF4)
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(
+                            1.dp,
+                            when (currentUser.role) {
+                                UserRole.KASIR -> Color(0xFFBAE6FD)
+                                UserRole.MANAGER_KEUANGAN -> Color(0xFFFDE68A)
+                                UserRole.PEMILIK -> Color(0xFFBBF7D0)
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("active_user_status_banner")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.AccountCircle,
+                                    contentDescription = null,
+                                    tint = when (currentUser.role) {
+                                        UserRole.KASIR -> Color(0xFF0284C7)
+                                        UserRole.MANAGER_KEUANGAN -> Color(0xFFD97706)
+                                        UserRole.PEMILIK -> Color(0xFF16A34A)
+                                    },
+                                    modifier = Modifier.size(22.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "${currentUser.name} (${currentUser.role.title})",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = currentUser.role.subtitle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontSize = 10.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+
+                            TextButton(
+                                onClick = { showSwitchUserDialog = true },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                modifier = Modifier.testTag("switch_user_button")
+                            ) {
+                                Text("Ganti", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+                }
+
+                // Disputed Alert Banner (if any disputed transactions exist)
+                if (financialSummary.disputedMotors > 0) {
+                    item {
+                        Surface(
+                            color = Color(0xFFFEF2F2),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("disputed_alert_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = Color(0xFFDC2626),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Perhatian: ${financialSummary.disputedMotors} Transaksi Disanggah Manager",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color(0xFF991B1B)
+                                    )
+                                    Text(
+                                        text = "Total Rp ${FormatUtils.formatRupiah(financialSummary.disputedAmount)} belum sah dan memerlukan peninjauan kembali.",
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF7F1D1D)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Section: Live Device Date & Past Date Status Card
                 item {
                     val isPastDate = selectedPeriod == TimePeriod.TANGGAL_PILIHAN && !FormatUtils.isToday(selectedDateMillis)
@@ -873,12 +1100,27 @@ fun WashDashboardScreen(
                 ) { record ->
                     TransactionItemCard(
                         record = record,
+                        currentUser = currentUser,
                         onEdit = {
                             editingRecord = it
                             showAddEditDialog = true
                         },
                         onDelete = {
                             recordToDelete = it
+                        },
+                        onPrintReceipt = {
+                            recordForThermalReceipt = it
+                        },
+                        onDispute = {
+                            recordForDispute = it
+                        },
+                        onValidate = {
+                            viewModel.validateTransaction(it)
+                            Toast.makeText(context, "Transaksi disahkan menjadi VALID", Toast.LENGTH_SHORT).show()
+                        },
+                        onRevokeDispute = {
+                            viewModel.revokeDispute(it)
+                            Toast.makeText(context, "Sanggahan dicabut", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -962,8 +1204,8 @@ fun WashDashboardScreen(
                 showAddEditDialog = false
                 editingRecord = null
             },
-            onSave = { id, motorCount, licensePlate, motorType, washerName, price, share, payment, note, timestamp ->
-                viewModel.addOrUpdateRecord(
+            onSave = { id, motorCount, licensePlate, motorType, washerName, price, share, payment, note, timestamp, printImmediately ->
+                val savedRecord = viewModel.addOrUpdateRecord(
                     id = id,
                     motorCount = motorCount,
                     licensePlate = licensePlate,
@@ -973,10 +1215,36 @@ fun WashDashboardScreen(
                     washerSharePerMotor = share,
                     paymentMethod = payment,
                     note = note,
-                    timestamp = timestamp
+                    timestamp = timestamp,
+                    existingRecord = editingRecord
                 )
                 showAddEditDialog = false
                 editingRecord = null
+
+                if (printImmediately) {
+                    recordForThermalReceipt = savedRecord
+                } else if (id == 0L) {
+                    savedRecordForReceiptOption = savedRecord
+                } else {
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Transaksi berhasil diperbarui!")
+                    }
+                }
+            }
+        )
+    }
+
+    // Dialog: Opsi Cetak Struk Setelah Simpan Transaksi
+    if (savedRecordForReceiptOption != null) {
+        PostSaveReceiptOptionDialog(
+            record = savedRecordForReceiptOption!!,
+            onPrintReceipt = {
+                val target = savedRecordForReceiptOption
+                savedRecordForReceiptOption = null
+                recordForThermalReceipt = target
+            },
+            onDismiss = {
+                savedRecordForReceiptOption = null
                 coroutineScope.launch {
                     snackbarHostState.showSnackbar("Transaksi berhasil disimpan!")
                 }
@@ -1138,6 +1406,52 @@ fun WashDashboardScreen(
             onDismiss = { showExportDialog = false },
             onShowSnackbar = { msg ->
                 coroutineScope.launch { snackbarHostState.showSnackbar(msg) }
+            }
+        )
+    }
+
+    // Dialog: Cetak Struk Thermal Printer
+    if (recordForThermalReceipt != null) {
+        ThermalReceiptDialog(
+            record = recordForThermalReceipt!!,
+            onDismiss = { recordForThermalReceipt = null }
+        )
+    }
+
+    // Dialog: Sanggah Transaksi (Manager Keuangan / Pemilik)
+    if (recordForDispute != null) {
+        DisputeTransactionDialog(
+            record = recordForDispute!!,
+            managerName = currentUser.name,
+            onDismiss = { recordForDispute = null },
+            onConfirmDispute = { reason ->
+                val target = recordForDispute
+                if (target != null) {
+                    viewModel.disputeTransaction(target, reason)
+                    recordForDispute = null
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar("Transaksi telah disanggah dan ditandai tidak sesuai")
+                    }
+                }
+            }
+        )
+    }
+
+    // Dialog: Ganti Akun Pengguna (Kasir / Manager / Pemilik)
+    if (showSwitchUserDialog) {
+        SwitchUserDialog(
+            currentUser = currentUser,
+            getAccountName = { role -> viewModel.getAccountName(role) },
+            onDismiss = { showSwitchUserDialog = false },
+            onConfirm = { targetRole, name, password, newPassword ->
+                val result = viewModel.switchUserRoleWithAuth(targetRole, name, password, newPassword)
+                if (result.first) {
+                    showSwitchUserDialog = false
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(result.second)
+                    }
+                }
+                result
             }
         )
     }

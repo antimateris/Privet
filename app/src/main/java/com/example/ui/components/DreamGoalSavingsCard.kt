@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.DreamGoalProgress
 import com.example.ui.SavingsSource
+import com.example.ui.SavingsTargetFor
 import com.example.util.FormatUtils
 import java.util.Locale
 
@@ -126,11 +127,24 @@ fun DreamGoalSavingsCard(
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text(
-                                text = "Tabungan Barang Impian",
+                                text = if (progress.config.targetFor == SavingsTargetFor.KARYAWAN) "Tabungan Karyawan" else "Tabungan Pemilik",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = if (progress.config.targetFor == SavingsTargetFor.KARYAWAN) Color(0xFFDCFCE7) else Color(0xFFDBEAFE)
+                            ) {
+                                Text(
+                                    text = if (progress.config.targetFor == SavingsTargetFor.KARYAWAN) "Karyawan" else "Pemilik",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (progress.config.targetFor == SavingsTargetFor.KARYAWAN) Color(0xFF15803D) else Color(0xFF1D4ED8),
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
                             if (progress.isAchieved) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Surface(
