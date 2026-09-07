@@ -1533,6 +1533,9 @@ fun WashDashboardScreen(
             onSetMaintenance = { enabled, message, itPassword ->
                 viewModel.setMaintenanceMode(enabled, message, itPassword)
             },
+            onPushBroadcast = { title, message, onComplete ->
+                viewModel.pushBroadcastNotification(title, message, onComplete)
+            },
             onUpdateCompanyProfile = { companyName, divisionName, address, phone ->
                 viewModel.updateCompanyProfile(
                     companyProfile.copy(
