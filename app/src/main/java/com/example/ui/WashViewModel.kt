@@ -16,7 +16,6 @@ import com.example.util.NotificationHelper
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.Calendar
-import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import kotlin.math.ceil
@@ -180,11 +179,12 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         FirestoreWashRepository(context = getApplication<Application>())
     }
 
-    // Cache of transaction timestamps that have already triggered a notification,
-    // ensuring notifications only fire strictly once (1x) per order.
-    private val notifiedTimestamps = Collections.synchronizedSet(mutableSetOf<Long>())
-    // Tracks the last broadcast notification ID processed by this device to avoid duplicate push
-    private var lastReceivedBroadcastId: String? = null
+    // Tracks the last broadcast notification ID processed by this device to avoid duplicate push.
+    // Persisted to SharedPreferences (not just an in-memory var) so that restarting the app
+    // doesn't forget it and re-fire the same old broadcast notification again.
+    private var lastReceivedBroadcastId: String?
+        get() = userPrefs.getString("last_broadcast_id", null)
+        set(value) = userPrefs.edit().putString("last_broadcast_id", value).apply()
 
     private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
@@ -438,11 +438,18 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 // difference between "not synced to cloud yet" (keep it) and
                 // "was in the cloud before, now gone -> deleted on another device" (remove it).
                 var previousRemoteTimestamps: Set<Long>? = null
+                // The very first snapshot after (re)subscribing is a catch-up sync, not a stream
+                // of brand-new transactions -- this fires whenever the app restarts, reconnects,
+                // OR when the local database was wiped (e.g. by a schema migration). Without this
+                // guard, every historical transaction still sitting in the cloud would look "new"
+                // to this device and re-trigger its notification all at once.
+                var isFirstSnapshot = true
                 try {
                     firestoreRepository.listenTransactions().collect { remoteRecords ->
                         val remoteTimestamps = remoteRecords.map { it.timestamp }.toSet()
                         val local = repository.getAllRecords().first()
                         val localTimestamps = local.map { it.timestamp }.toSet()
+                        val shouldNotify = !isFirstSnapshot
 
                         // Add records that exist in the cloud but not yet locally.
                         var newlyAdded = 0
@@ -450,10 +457,14 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                             if (remote.timestamp !in localTimestamps) {
                                 repository.insertRecord(remote)
                                 newlyAdded++
-                                // Notify user about new transaction from cloud
-                                NotificationHelper.notifyNewTransaction(getApplication(), remote)
+                                // Only notify for transactions that genuinely arrive after this
+                                // device is already caught up -- not for the initial catch-up sync.
+                                if (shouldNotify) {
+                                    NotificationHelper.notifyNewTransaction(getApplication(), remote)
+                                }
                             }
                         }
+                        isFirstSnapshot = false
 
                         // Remove local records that used to exist in the cloud but have since
                         // been deleted from another device. We only do this once we have a
