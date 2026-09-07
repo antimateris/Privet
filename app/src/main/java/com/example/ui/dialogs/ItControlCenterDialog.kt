@@ -60,7 +60,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.repository.MaintenanceStatusData
 import com.example.ui.CompanyProfile
-import com.example.util.NotificationHelper
 
 /**
  * Control Center khusus Tim IT & Support:
@@ -74,6 +73,7 @@ fun ItControlCenterDialog(
     companyProfile: CompanyProfile,
     onDismiss: () -> Unit,
     onSetMaintenance: (enabled: Boolean, message: String, itPassword: String) -> Pair<Boolean, String>,
+    onPushBroadcast: (title: String, message: String, onComplete: (Boolean, String) -> Unit) -> Unit,
     onUpdateCompanyProfile: (companyName: String, divisionName: String, address: String, phone: String) -> Unit
 ) {
     val context = LocalContext.current
@@ -294,14 +294,14 @@ fun ItControlCenterDialog(
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = "Tes Push Notifikasi & Suara",
+                                text = "Push Notifikasi ke Semua Perangkat",
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.Bold
                             )
                         }
 
                         Text(
-                            text = "Gunakan fitur ini untuk mengetes apakah notifikasi dan audio lonceng berbunyi dengan lancar di perangkat.",
+                            text = "Notifikasi ini akan ditembakkan ke SEMUA HP yang login (Kasir, Manager, Owner, IT lain) secara real-time, bukan cuma ke perangkat ini.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -339,20 +339,18 @@ fun ItControlCenterDialog(
 
                         Button(
                             onClick = {
-                                NotificationHelper.showNotification(
-                                    context = context,
-                                    title = testNotifTitle,
-                                    message = testNotifMessage
-                                )
-                                NotificationHelper.playChime(context)
-                                testFeedback = "Notifikasi berhasil ditembakkan ke status bar dan nada dering berbunyi!"
+                                // pushBroadcastNotification already fires locally (with chime) on
+                                // this device AND pushes to every other device on this branch.
+                                onPushBroadcast(testNotifTitle, testNotifMessage) { success, resultMsg ->
+                                    testFeedback = resultMsg
+                                }
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Tembak Notifikasi Tes", fontWeight = FontWeight.Bold)
+                            Text("Kirim ke Semua Perangkat", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
