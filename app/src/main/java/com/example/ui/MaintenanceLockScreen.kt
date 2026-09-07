@@ -46,13 +46,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.repository.MaintenanceStatusData
 
 /**
- * Full-screen blocker shown on every device while maintenance mode is active. Includes a
- * discreet Owner-only unlock so the Pemilik can turn it back off without needing another device.
+ * Full-screen blocker shown on every device while maintenance mode is active. Includes an
+ * unlock for Tim IT Support to disable maintenance mode.
  */
 @Composable
 fun MaintenanceLockScreen(
     status: MaintenanceStatusData,
-    onUnlock: (ownerPassword: String) -> Pair<Boolean, String>
+    onUnlock: (itPassword: String) -> Pair<Boolean, String>
 ) {
     var showUnlockForm by remember { mutableStateOf(false) }
     var passwordInput by remember { mutableStateOf("") }
@@ -112,7 +112,7 @@ fun MaintenanceLockScreen(
             if (!showUnlockForm) {
                 TextButton(
                     onClick = { showUnlockForm = true },
-                    modifier = Modifier.testTag("btn_show_owner_unlock")
+                    modifier = Modifier.testTag("btn_show_it_unlock")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Lock,
@@ -120,7 +120,7 @@ fun MaintenanceLockScreen(
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Masuk sebagai Pemilik", fontSize = 12.sp)
+                    Text("Buka Kunci Tim IT", fontSize = 12.sp)
                 }
             } else {
                 Column(
@@ -133,7 +133,7 @@ fun MaintenanceLockScreen(
                             passwordInput = it
                             errorMessage = null
                         },
-                        label = { Text("Password Pemilik") },
+                        label = { Text("Password Tim IT") },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         trailingIcon = {

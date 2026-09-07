@@ -12,6 +12,7 @@ import com.example.data.repository.MaintenanceStatusData
 import com.example.data.repository.WashRepository
 import com.example.util.CorporateReportGenerator
 import com.example.util.FormatUtils
+import com.example.util.NotificationHelper
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -50,7 +51,8 @@ data class WasherShareBreakdown(
 enum class UserRole(val title: String, val subtitle: String) {
     KASIR("Kasir (Operator)", "Input motor cuci & cetak struk"),
     MANAGER_KEUANGAN("Manager Keuangan", "Verifikasi, validasi & sanggah transaksi"),
-    PEMILIK("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan")
+    PEMILIK("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan"),
+    IT_SUPPORT("Tim IT & Support", "Akses maintenance, tes notifikasi & kustomisasi aplikasi")
 }
 
 data class CurrentUser(
@@ -201,6 +203,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             UserRole.KASIR -> "Kasir Utama"
             UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
             UserRole.PEMILIK -> "Pemilik Usaha"
+            UserRole.IT_SUPPORT -> "IT Support"
         }
         val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
         return CurrentUser(name = name, role = role)
@@ -211,17 +214,56 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             UserRole.KASIR -> "Kasir Utama"
             UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
             UserRole.PEMILIK -> "Pemilik Usaha"
+            UserRole.IT_SUPPORT -> "IT Support"
         }
         return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
     }
 
     fun getAccountPassword(role: UserRole): String {
-        return userPrefs.getString("account_pass_${role.name}", "1234") ?: "1234"
+        val defaultPass = if (role == UserRole.IT_SUPPORT) "itadmin" else "1234"
+        return userPrefs.getString("account_pass_${role.name}", defaultPass) ?: defaultPass
     }
 
     fun verifyPassword(role: UserRole, enteredPass: String): Boolean {
         val saved = getAccountPassword(role)
         return enteredPass.trim() == saved.trim()
+    }
+
+    /**
+     * Login mandiri dengan username dan password (tanpa pilih peran via radio button).
+     * Mencari kecocokan username/peran dan password secara otomatis.
+     */
+    fun loginWithCredentials(
+        usernameInput: String,
+        passwordInput: String,
+        newPasswordInput: String? = null
+    ): Pair<Boolean, String> {
+        val cleanUser = usernameInput.trim().lowercase()
+        val cleanPass = passwordInput.trim()
+
+        if (cleanUser.isBlank()) {
+            return Pair(false, "Username tidak boleh kosong!")
+        }
+        if (cleanPass.isBlank()) {
+            return Pair(false, "Password tidak boleh kosong!")
+        }
+
+        // Resolusi peran berdasarkan username atau kata kunci
+        val targetRole = when {
+            cleanUser.contains("it") || cleanUser.contains("admin") || cleanUser.contains("dev") || cleanUser.contains("support") -> UserRole.IT_SUPPORT
+            cleanUser.contains("owner") || cleanUser.contains("pemilik") || cleanUser.contains("bos") -> UserRole.PEMILIK
+            cleanUser.contains("manajer") || cleanUser.contains("manager") || cleanUser.contains("keuangan") -> UserRole.MANAGER_KEUANGAN
+            cleanUser.contains("kasir") || cleanUser.contains("operator") -> UserRole.KASIR
+            else -> {
+                // Cari kecocokan dengan nama akun tersimpan
+                val matched = UserRole.values().firstOrNull { role ->
+                    getAccountName(role).trim().equals(cleanUser, ignoreCase = true)
+                }
+                matched ?: UserRole.KASIR
+            }
+        }
+
+        return switchUserRoleWithAuth(targetRole, usernameInput.trim(), cleanPass, newPasswordInput)
     }
 
     fun switchUserRoleWithAuth(
@@ -275,20 +317,20 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Turns maintenance mode on or off for every device, gated behind the Pemilik (owner)
-     * password so a Kasir/Manager can't accidentally lock the whole app.
+     * Turns maintenance mode on or off for every device, gated behind the Tim IT
+     * password. Pemilik (owner) dibatasi agar tidak bisa mengubah maintenance mode.
      */
     fun setMaintenanceMode(
         enabled: Boolean,
         message: String,
-        ownerPassword: String
+        itPassword: String
     ): Pair<Boolean, String> {
-        if (!verifyPassword(UserRole.PEMILIK, ownerPassword)) {
-            return Pair(false, "Password Pemilik salah!")
+        if (!verifyPassword(UserRole.IT_SUPPORT, itPassword)) {
+            return Pair(false, "Password Tim IT salah! Akses maintenance dibatasi khusus Tim IT.")
         }
 
         val finalMessage = message.trim().ifBlank {
-            "Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti."
+            "Sistem sedang dalam maintenance oleh Tim IT. Silakan tunggu beberapa saat."
         }
 
         // Optimistic local update so the toggling device reacts instantly, even before the
@@ -301,7 +343,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
         return Pair(
             true,
-            if (enabled) "Mode maintenance diaktifkan untuk semua perangkat" else "Mode maintenance dinonaktifkan"
+            if (enabled) "Mode maintenance diaktifkan oleh Tim IT untuk semua perangkat" else "Mode maintenance berhasil dinonaktifkan oleh Tim IT"
         )
     }
 
@@ -343,6 +385,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                             if (remote.timestamp !in localTimestamps) {
                                 repository.insertRecord(remote)
                                 newlyAdded++
+                                // Notify user about new transaction from cloud
+                                NotificationHelper.notifyNewTransaction(getApplication(), remote)
                             }
                         }
 
@@ -1331,7 +1375,10 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val finalId = if (id == 0L) {
-                repository.insertRecord(record)
+                val newId = repository.insertRecord(record)
+                // Trigger notifikasi transaksi baru
+                NotificationHelper.notifyNewTransaction(getApplication(), record.copy(id = newId))
+                newId
             } else {
                 repository.updateRecord(record)
                 id

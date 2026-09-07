@@ -24,6 +24,7 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.DirectionsBike
+import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Print
@@ -108,6 +109,7 @@ fun AddEditWashDialog(
         mutableLongStateOf(initialRecord?.timestamp ?: defaultDateMillis)
     }
     var showDatePickerDialog by remember { mutableStateOf(false) }
+    var showOcrScanner by remember { mutableStateOf(false) }
 
     // Resolves the timestamp to actually save: if the user left the date on "today" (i.e. never
     // switched to Kemarin or a custom past date), we use the real current time at the moment
@@ -329,7 +331,7 @@ fun AddEditWashDialog(
                     }
                 }
 
-                // License plate
+                // License plate with OCR Camera Scanner button
                 OutlinedTextField(
                     value = licensePlate,
                     onValueChange = { licensePlate = it.uppercase() },
@@ -337,6 +339,18 @@ fun AddEditWashDialog(
                     placeholder = { Text("B 1234 XYZ") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters),
+                    trailingIcon = {
+                        IconButton(
+                            onClick = { showOcrScanner = true },
+                            modifier = Modifier.testTag("btn_scan_license_plate")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.DocumentScanner,
+                                contentDescription = "Scan Plat Nomor",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("license_plate_input")
@@ -600,4 +614,14 @@ fun AddEditWashDialog(
             }
         }
     )
+
+    if (showOcrScanner) {
+        OcrLicensePlateDialog(
+            onDismiss = { showOcrScanner = false },
+            onPlateDetected = { plate ->
+                licensePlate = plate
+                showOcrScanner = false
+            }
+        )
+    }
 }

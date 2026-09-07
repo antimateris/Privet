@@ -26,11 +26,11 @@ class MainActivity : ComponentActivity() {
           if (isLocked) {
             MaintenanceLockScreen(
               status = maintenanceStatus,
-              onUnlock = { ownerPassword ->
+              onUnlock = { itPassword ->
                 viewModel.setMaintenanceMode(
                   enabled = false,
                   message = maintenanceStatus.message,
-                  ownerPassword = ownerPassword
+                  itPassword = itPassword
                 )
               }
             )
