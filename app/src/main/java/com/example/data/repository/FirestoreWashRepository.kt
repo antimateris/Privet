@@ -36,6 +36,17 @@ data class MaintenanceStatusData(
 )
 
 /**
+ * Broadcast notification payload sent by IT Support to all connected devices.
+ */
+data class AppBroadcastNotification(
+    val id: String = "",
+    val title: String = "",
+    val message: String = "",
+    val senderName: String = "Tim IT Support",
+    val timestamp: Long = 0L
+)
+
+/**
  * Repository class for Firebase Firestore handling real-time synchronization
  * of motor wash transactions for PT. LION STEAM MOTOR.
  */
@@ -52,6 +63,7 @@ class FirestoreWashRepository(
         private const val COLLECTION_SETTINGS = "settings"
         private const val DOC_ACCOUNTS = "account_credentials"
         private const val DOC_APP_STATUS = "app_status"
+        private const val DOC_BROADCAST = "broadcast_notification"
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
@@ -122,6 +134,13 @@ class FirestoreWashRepository(
             ?.document(branchId)
             ?.collection(COLLECTION_SETTINGS)
             ?.document(DOC_APP_STATUS)
+
+    private fun getBroadcastDoc(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_SETTINGS)
+            ?.document(DOC_BROADCAST)
 
     /**
      * Checks if Firestore is ready and available in the current environment.
@@ -570,6 +589,66 @@ class FirestoreWashRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set maintenance status", e)
+            Result.failure(e)
+        }
+    }
+
+    // --- Push Broadcast Notification (sent by IT Support to all connected devices) ---
+
+    /**
+     * Listens in real-time to broadcast notifications pushed to all devices.
+     */
+    fun listenBroadcastNotification(branchId: String = DEFAULT_BRANCH): Flow<AppBroadcastNotification?> {
+        val doc = getBroadcastDoc(branchId) ?: return flowOf(null)
+
+        return callbackFlow {
+            val listenerRegistration = doc.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Listen broadcast notification failed", error)
+                    return@addSnapshotListener
+                }
+                if (snapshot == null || !snapshot.exists()) {
+                    trySend(null)
+                    return@addSnapshotListener
+                }
+                val notif = AppBroadcastNotification(
+                    id = snapshot.getString("id") ?: "",
+                    title = snapshot.getString("title") ?: "",
+                    message = snapshot.getString("message") ?: "",
+                    senderName = snapshot.getString("senderName") ?: "Tim IT Support",
+                    timestamp = snapshot.getLong("timestamp") ?: 0L
+                )
+                trySend(notif)
+            }
+            awaitClose { listenerRegistration.remove() }
+        }
+    }
+
+    /**
+     * Sends a broadcast notification to all devices sharing this branch.
+     */
+    suspend fun sendBroadcastNotification(
+        title: String,
+        message: String,
+        senderName: String = "Tim IT Support",
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val doc = getBroadcastDoc(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        return try {
+            val data = hashMapOf(
+                "id" to System.currentTimeMillis().toString(),
+                "title" to title,
+                "message" to message,
+                "senderName" to senderName,
+                "timestamp" to System.currentTimeMillis()
+            )
+            doc.set(data).awaitTask()
+            Log.d(TAG, "Broadcast notification sent: $title")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send broadcast notification", e)
             Result.failure(e)
         }
     }

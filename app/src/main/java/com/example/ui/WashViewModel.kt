@@ -16,6 +16,7 @@ import com.example.util.NotificationHelper
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Collections
 import java.util.Date
 import java.util.Locale
 import kotlin.math.ceil
@@ -178,6 +179,12 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     private val firestoreRepository by lazy {
         FirestoreWashRepository(context = getApplication<Application>())
     }
+
+    // Cache of transaction timestamps that have already triggered a notification,
+    // ensuring notifications only fire strictly once (1x) per order.
+    private val notifiedTimestamps = Collections.synchronizedSet(mutableSetOf<Long>())
+    // Tracks the last broadcast notification ID processed by this device to avoid duplicate push
+    private var lastReceivedBroadcastId: String? = null
 
     private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
@@ -347,6 +354,41 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /**
+     * Pushes a broadcast notification to all devices across the enterprise,
+     * triggered exclusively by IT Support.
+     */
+    fun pushBroadcastNotification(
+        title: String,
+        message: String,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        val cleanTitle = title.trim().ifBlank { "Pemberitahuan IT Support" }
+        val cleanMessage = message.trim().ifBlank { "Tes Push Notifikasi ke seluruh perangkat berhasil!" }
+        val sender = _currentUser.value.name
+
+        // Trigger on current device immediately with chime sound
+        NotificationHelper.showNotification(
+            context = getApplication(),
+            title = cleanTitle,
+            message = cleanMessage
+        )
+        NotificationHelper.playChime(getApplication())
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = firestoreRepository.sendBroadcastNotification(
+                title = cleanTitle,
+                message = cleanMessage,
+                senderName = sender
+            )
+            if (result.isSuccess) {
+                onComplete(true, "Notifikasi berhasil dipush ke semua perangkat!")
+            } else {
+                onComplete(false, "Gagal push ke cloud: ${result.exceptionOrNull()?.message ?: "Periksa koneksi"}")
+            }
+        }
+    }
+
     init {
         val database = AppDatabase.getDatabase(application)
         repository = WashRepository(database.washDao())
@@ -362,6 +404,29 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (_: Exception) {
                     // Ignore: if maintenance status can't be fetched, default to unlocked (false)
+                }
+            }
+
+            // Listen for push broadcast notifications from Tim IT Support sent to all devices
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenBroadcastNotification().collect { broadcast ->
+                        if (broadcast != null && broadcast.id.isNotBlank()) {
+                            // Only trigger notification if this is a newly arrived broadcast
+                            if (broadcast.id != lastReceivedBroadcastId) {
+                                lastReceivedBroadcastId = broadcast.id
+                                // Trigger push notification and chime on this device
+                                NotificationHelper.showNotification(
+                                    context = getApplication(),
+                                    title = broadcast.title.ifBlank { "Pemberitahuan IT Support" },
+                                    message = broadcast.message
+                                )
+                                NotificationHelper.playChime(getApplication())
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Best-effort push notification
                 }
             }
         }
