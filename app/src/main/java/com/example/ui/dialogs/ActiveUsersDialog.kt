@@ -188,6 +188,7 @@ fun ActiveUsersDialog(
                             val isOnline = user.isOnlineNow()
                             val roleColor = when {
                                 user.role.contains("Kasir", ignoreCase = true) -> Color(0xFF0284C7)
+                                user.role.contains("Manajer", ignoreCase = true) -> Color(0xFF7C3AED)
                                 user.role.contains("Pemilik", ignoreCase = true) -> Color(0xFFD97706)
                                 else -> Color(0xFF16A34A)
                             }
