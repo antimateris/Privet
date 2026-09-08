@@ -2,6 +2,8 @@ package com.example.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.example.data.model.StoreExpense
+import com.example.data.model.UserPresence
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
 import com.google.android.gms.tasks.Task
@@ -36,6 +38,17 @@ data class MaintenanceStatusData(
 )
 
 /**
+ * Real-time push broadcast model to broadcast push notifications to all connected devices.
+ */
+data class BroadcastPushMessage(
+    val id: String = "",
+    val title: String = "",
+    val message: String = "",
+    val senderName: String = "",
+    val timestamp: Long = 0L
+)
+
+/**
  * Repository class for Firebase Firestore handling real-time synchronization
  * of motor wash transactions for PT. LION STEAM MOTOR.
  */
@@ -50,6 +63,8 @@ class FirestoreWashRepository(
         private const val COLLECTION_TRANSACTIONS = "transactions"
         private const val COLLECTION_SETTINGS = "settings"
         private const val COLLECTION_WORKERS = "workers"
+        private const val COLLECTION_EXPENSES = "expenses"
+        private const val COLLECTION_ACTIVE_USERS = "active_users"
         private const val DOC_ACCOUNTS = "account_credentials"
         private const val DOC_APP_STATUS = "app_status"
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
@@ -108,6 +123,18 @@ class FirestoreWashRepository(
             ?.collection(COLLECTION_BRANCHES)
             ?.document(branchId)
             ?.collection(COLLECTION_WORKERS)
+
+    private fun getExpensesCollection(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_EXPENSES)
+
+    private fun getActiveUsersCollection(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_ACTIVE_USERS)
 
     /**
      * Turns a petugas/worker name into a stable, safe Firestore document ID so the same
@@ -531,6 +558,151 @@ class FirestoreWashRepository(
         }
     }
 
+    // --- Store Expenses (Pengeluaran Toko) Sync ---
+
+    fun listenExpenses(branchId: String = DEFAULT_BRANCH): Flow<List<StoreExpense>> {
+        val collection = getExpensesCollection(branchId)
+            ?: return flowOf(emptyList())
+
+        return callbackFlow {
+            val listenerRegistration = collection
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.e(TAG, "Listen expenses failed", error)
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null) {
+                        val expenses = snapshot.documents.mapNotNull { doc ->
+                            try {
+                                StoreExpense(
+                                    id = doc.getLong("localId") ?: 0L,
+                                    title = doc.getString("title") ?: "",
+                                    category = doc.getString("category") ?: StoreExpense.CATEGORY_BAHAN_CUCI,
+                                    amount = doc.getLong("amount") ?: 0L,
+                                    timestamp = doc.getLong("timestamp") ?: System.currentTimeMillis(),
+                                    recordedBy = doc.getString("recordedBy") ?: "Kasir",
+                                    note = doc.getString("note") ?: ""
+                                )
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Error parsing expense doc ${doc.id}", e)
+                                null
+                            }
+                        }
+                        trySend(expenses)
+                    }
+                }
+            awaitClose { listenerRegistration.remove() }
+        }
+    }
+
+    suspend fun saveExpense(
+        expense: StoreExpense,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val collection = getExpensesCollection(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        return try {
+            val docId = "exp_${expense.timestamp}"
+            val data = hashMapOf(
+                "localId" to expense.id,
+                "title" to expense.title,
+                "category" to expense.category,
+                "amount" to expense.amount,
+                "timestamp" to expense.timestamp,
+                "recordedBy" to expense.recordedBy,
+                "note" to expense.note,
+                "syncTimestamp" to System.currentTimeMillis()
+            )
+            collection.document(docId).set(data).awaitTask()
+            Log.d(TAG, "Expense synced to Firestore: ${expense.title}")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to sync expense to Firestore", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteExpenseRemote(
+        timestamp: Long,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val collection = getExpensesCollection(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        return try {
+            val docId = "exp_$timestamp"
+            collection.document(docId).delete().awaitTask()
+            Log.d(TAG, "Expense deleted from Firestore: $docId")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to delete expense from Firestore", e)
+            Result.failure(e)
+        }
+    }
+
+    // --- User Presence & Activity Sync ---
+
+    suspend fun updateUserPresence(
+        presence: UserPresence,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val collection = getActiveUsersCollection(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        val docId = if (presence.userId.isNotBlank()) presence.userId else "user_${presence.userName.hashCode()}"
+
+        return try {
+            val data = hashMapOf(
+                "userId" to docId,
+                "userName" to presence.userName,
+                "role" to presence.role,
+                "lastActiveTime" to presence.lastActiveTime,
+                "lastLoginTime" to presence.lastLoginTime,
+                "deviceModel" to presence.deviceModel,
+                "isOnline" to true
+            )
+            collection.document(docId).set(data).awaitTask()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    fun listenActiveUsers(branchId: String = DEFAULT_BRANCH): Flow<List<UserPresence>> {
+        val collection = getActiveUsersCollection(branchId)
+            ?: return flowOf(emptyList())
+
+        return callbackFlow {
+            val listenerRegistration = collection.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Listen active users failed", error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null) {
+                    val users = snapshot.documents.mapNotNull { doc ->
+                        try {
+                            UserPresence(
+                                userId = doc.getString("userId") ?: doc.id,
+                                userName = doc.getString("userName") ?: "",
+                                role = doc.getString("role") ?: "",
+                                lastActiveTime = doc.getLong("lastActiveTime") ?: 0L,
+                                lastLoginTime = doc.getLong("lastLoginTime") ?: 0L,
+                                deviceModel = doc.getString("deviceModel") ?: "",
+                                isOnline = doc.getBoolean("isOnline") ?: true
+                            )
+                        } catch (e: Exception) {
+                            null
+                        }
+                    }
+                    trySend(users)
+                }
+            }
+            awaitClose { listenerRegistration.remove() }
+        }
+    }
+
     // --- Private Helper Extensions ---
 
     private fun WashRecord.toFirestoreMap(documentId: String): Map<String, Any> {
@@ -556,6 +728,68 @@ class FirestoreWashRepository(
             "disputedAt" to disputedAt,
             "syncTimestamp" to System.currentTimeMillis()
         )
+    }
+
+    /**
+     * Broadcasts a push notification message to all connected devices in real-time.
+     */
+    fun sendBroadcastPush(
+        title: String,
+        message: String,
+        senderName: String,
+        branchId: String = DEFAULT_BRANCH
+    ): Task<Void>? {
+        val firestore = getFirestore() ?: return null
+        val pushId = "push_${System.currentTimeMillis()}"
+        val data = mapOf(
+            "id" to pushId,
+            "title" to title,
+            "message" to message,
+            "senderName" to senderName,
+            "timestamp" to System.currentTimeMillis()
+        )
+        return firestore.collection(COLLECTION_BRANCHES)
+            .document(branchId)
+            .collection("broadcast_pushes")
+            .document(pushId)
+            .set(data)
+    }
+
+    /**
+     * Real-time listener for incoming broadcast push notifications.
+     */
+    fun listenBroadcastPushes(branchId: String = DEFAULT_BRANCH): Flow<List<BroadcastPushMessage>> {
+        val firestore = getFirestore() ?: return flowOf(emptyList())
+        return callbackFlow {
+            val listener = firestore.collection(COLLECTION_BRANCHES)
+                .document(branchId)
+                .collection("broadcast_pushes")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(10)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
+                    if (snapshot != null) {
+                        val list = snapshot.documents.mapNotNull { doc ->
+                            try {
+                                BroadcastPushMessage(
+                                    id = doc.getString("id") ?: doc.id,
+                                    title = doc.getString("title") ?: "",
+                                    message = doc.getString("message") ?: "",
+                                    senderName = doc.getString("senderName") ?: "",
+                                    timestamp = doc.getLong("timestamp") ?: 0L
+                                )
+                            } catch (_: Exception) {
+                                null
+                            }
+                        }
+                        trySend(list)
+                    }
+                }
+            awaitClose { listener.remove() }
+        }
     }
 
     private fun DocumentSnapshot.toWashRecord(): WashRecord {

@@ -6,15 +6,17 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.example.data.model.StoreExpense
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-@Database(entities = [WashRecord::class, Worker::class], version = 4, exportSchema = false)
+@Database(entities = [WashRecord::class, Worker::class, StoreExpense::class], version = 5, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun washDao(): WashDao
+    abstract fun expenseDao(): ExpenseDao
 
     companion object {
         @Volatile
@@ -54,6 +56,14 @@ abstract class AppDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `store_expenses` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `title` TEXT NOT NULL, `category` TEXT NOT NULL, `amount` INTEGER NOT NULL, `timestamp` INTEGER NOT NULL, `recordedBy` TEXT NOT NULL, `note` TEXT NOT NULL)"
+                )
+            }
+        }
+
         fun getDatabase(context: Context): AppDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -61,21 +71,9 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "steam_motor_database"
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_1_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_1_3, MIGRATION_3_4, MIGRATION_4_5)
                     .fallbackToDestructiveMigration(dropAllTables = true)
                     .fallbackToDestructiveMigrationOnDowngrade(dropAllTables = true)
-                    .addCallback(object : Callback() {
-                        override fun onCreate(db: SupportSQLiteDatabase) {
-                            super.onCreate(db)
-                            // Seed default workers
-                            CoroutineScope(Dispatchers.IO).launch {
-                                val dao = getDatabase(context).washDao()
-                                dao.insertWorker(Worker(name = "Budi"))
-                                dao.insertWorker(Worker(name = "Asep"))
-                                dao.insertWorker(Worker(name = "Joko"))
-                            }
-                        }
-                    })
                     .build()
                 INSTANCE = instance
                 instance

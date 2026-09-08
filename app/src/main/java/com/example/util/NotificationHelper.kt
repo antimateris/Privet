@@ -106,14 +106,32 @@ object NotificationHelper {
     }
 
     /**
-     * Notifies about a newly registered motor wash transaction.
+     * Internal cache of transaction timestamps already notified to guarantee strictly 1x notification.
+     * Orders that are deleted are also recorded here so no notification is ever triggered on deletion.
+     */
+    private val notifiedOrderTimestamps = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
+
+    /**
+     * Mark an order as deleted/handled so it NEVER triggers a notification.
+     */
+    fun markOrderHandledOrDeleted(timestamp: Long) {
+        notifiedOrderTimestamps.add(timestamp)
+    }
+
+    /**
+     * Notifies about a newly registered motor wash transaction (strictly 1x only).
      */
     fun notifyNewTransaction(context: Context, record: com.example.data.model.WashRecord) {
+        if (!notifiedOrderTimestamps.add(record.timestamp)) {
+            // Already notified or was deleted!
+            return
+        }
         val plate = record.licensePlate.ifBlank { "Motor" }
-        val title = "Transaksi Baru: $plate"
-        val washer = if (record.washerName.isNotBlank()) " oleh ${record.washerName}" else ""
+        val title = "Order Masuk: $plate"
+        val washer = if (record.washerName.isNotBlank()) " • Petugas: ${record.washerName}" else ""
         val priceFmt = "Rp %,d".format(record.totalPrice).replace(',', '.')
         val message = "${record.motorCount} unit ($priceFmt)$washer • Metode: ${record.paymentMethod}"
-        showNotification(context, title, message)
+        val notifId = (record.timestamp % Int.MAX_VALUE).toInt()
+        showNotification(context, title, message, notifId)
     }
 }

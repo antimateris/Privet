@@ -41,6 +41,9 @@ import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.Payments
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Savings
@@ -52,6 +55,8 @@ import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -95,15 +100,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.data.model.StoreExpense
+import com.example.data.model.UserPresence
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
 import com.example.ui.components.DreamGoalSavingsCard
 import com.example.ui.components.DreamSavingsScreen
+import com.example.ui.components.ExpenseScreen
 import com.example.ui.components.MonthlyRecapScreen
 import com.example.ui.components.RevenueAnalysisSection
 import com.example.ui.components.SummaryCardsSection
 import com.example.ui.components.TransactionItemCard
 import com.example.ui.components.WasherBreakdownCard
+import com.example.ui.dialogs.ActiveUsersDialog
+import com.example.ui.dialogs.AddEditExpenseDialog
 import com.example.ui.dialogs.AddEditWashDialog
 import com.example.ui.dialogs.CalendarRevenueDialog
 import com.example.ui.dialogs.DisputeTransactionDialog
@@ -114,6 +124,7 @@ import com.example.ui.dialogs.ManageWorkersDialog
 import com.example.ui.dialogs.MaintenanceModeDialog
 import com.example.ui.dialogs.PostSaveReceiptOptionDialog
 import com.example.ui.dialogs.SwitchUserDialog
+import com.example.ui.dialogs.TestPushDialog
 import com.example.ui.dialogs.ThermalReceiptDialog
 import com.example.util.ExportUtils
 import com.example.util.FormatUtils
@@ -148,6 +159,10 @@ fun WashDashboardScreen(
     val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
     val maintenanceStatus by viewModel.maintenanceStatus.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val activeUsers by viewModel.activeUsers.collectAsStateWithLifecycle()
+    val allExpenses by viewModel.allExpenses.collectAsStateWithLifecycle()
+    val todayExpensesTotal by viewModel.todayExpensesTotal.collectAsStateWithLifecycle()
+    val currentMonthExpensesTotal by viewModel.currentMonthExpensesTotal.collectAsStateWithLifecycle()
 
     var currentTab by remember { mutableStateOf(0) }
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -162,6 +177,11 @@ fun WashDashboardScreen(
     var showEditPastRevenueDialog by remember { mutableStateOf(false) }
     var showExportDialog by remember { mutableStateOf(false) }
     var showSwitchUserDialog by remember { mutableStateOf(false) }
+    var showActiveUsersDialog by remember { mutableStateOf(false) }
+    var showTestPushDialog by remember { mutableStateOf(false) }
+    var showAddExpenseDialog by remember { mutableStateOf(false) }
+    var editingExpense by remember { mutableStateOf<StoreExpense?>(null) }
+    var expenseToDelete by remember { mutableStateOf<StoreExpense?>(null) }
     var recordForThermalReceipt by remember { mutableStateOf<WashRecord?>(null) }
     var savedRecordForReceiptOption by remember { mutableStateOf<WashRecord?>(null) }
     var recordForDispute by remember { mutableStateOf<WashRecord?>(null) }
@@ -180,8 +200,9 @@ fun WashDashboardScreen(
                             Icon(
                                 imageVector = when (currentTab) {
                                     0 -> Icons.Default.DirectionsBike
-                                    1 -> Icons.Default.CalendarMonth
-                                    2 -> Icons.Default.BarChart
+                                    1 -> Icons.Default.Payments
+                                    2 -> Icons.Default.CalendarMonth
+                                    3 -> Icons.Default.BarChart
                                     else -> Icons.Default.Savings
                                 },
                                 contentDescription = null,
@@ -192,8 +213,9 @@ fun WashDashboardScreen(
                             Text(
                                 text = when (currentTab) {
                                     0 -> "Steam Motor"
-                                    1 -> "Rekap Bulanan"
-                                    2 -> "Analisis Pendapatan"
+                                    1 -> "Pengeluaran Toko"
+                                    2 -> "Rekap Bulanan"
+                                    3 -> "Analisis Pendapatan"
                                     else -> "Barang Impian"
                                 },
                                 style = MaterialTheme.typography.titleLarge,
@@ -203,8 +225,9 @@ fun WashDashboardScreen(
                         Text(
                             text = when (currentTab) {
                                 0 -> "1 Motor 10rb • Bagi Hasil 5rb"
-                                1 -> "${monthlySummary.monthName} ${monthlySummary.year} • Ekspor CSV & WA"
-                                2 -> "Performa Finansial & Proyeksi Usaha"
+                                1 -> "Bulan Ini: Rp ${FormatUtils.formatRupiah(currentMonthExpensesTotal)} • Kontrol Beban Toko"
+                                2 -> "${monthlySummary.monthName} ${monthlySummary.year} • Ekspor CSV & WA"
+                                3 -> "Performa Finansial & Proyeksi Usaha"
                                 else -> "Target & Progres Tabungan Omset"
                             },
                             style = MaterialTheme.typography.labelSmall,
@@ -213,6 +236,45 @@ fun WashDashboardScreen(
                     }
                 },
                 actions = {
+                    val onlineUsersCount = activeUsers.count { it.isOnlineNow() }
+
+                    // Active Users Status Dialog Button with Live Online Badge
+                    IconButton(
+                        onClick = {
+                            viewModel.refreshActiveUsers()
+                            showActiveUsersDialog = true
+                        },
+                        modifier = Modifier.testTag("appbar_active_users_button")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (onlineUsersCount > 0) {
+                                    Badge(containerColor = Color(0xFF16A34A)) {
+                                        Text("$onlineUsersCount", fontSize = 9.sp, color = Color.White)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.People,
+                                contentDescription = "Siapa yang Sedang Aktif",
+                                tint = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+
+                    // Test Push Notifikasi ke Semua Orang
+                    IconButton(
+                        onClick = { showTestPushDialog = true },
+                        modifier = Modifier.testTag("appbar_test_push_button")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.NotificationsActive,
+                            contentDescription = "Test Push Notifikasi",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
                     // Ekspor Laporan Dialog Button
                     IconButton(
                         onClick = { showExportDialog = true },
@@ -290,6 +352,37 @@ fun WashDashboardScreen(
                         expanded = showMenu,
                         onDismissRequest = { showMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("Siapa yang Sedang Aktif (${activeUsers.count { it.isOnlineNow() }} Online)") },
+                            leadingIcon = { Icon(Icons.Default.People, contentDescription = null, tint = Color(0xFF16A34A)) },
+                            onClick = {
+                                showMenu = false
+                                viewModel.refreshActiveUsers()
+                                showActiveUsersDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_active_users")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Pengeluaran Toko") },
+                            leadingIcon = { Icon(Icons.Default.Payments, contentDescription = null, tint = Color(0xFFDC2626)) },
+                            onClick = {
+                                showMenu = false
+                                currentTab = 1
+                            },
+                            modifier = Modifier.testTag("menu_store_expenses")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Test Push ke Semua Orang") },
+                            leadingIcon = { Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = {
+                                showMenu = false
+                                showTestPushDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_test_push")
+                        )
+
                         DropdownMenuItem(
                             text = { Text("Ganti Akun (${currentUser.name} - ${currentUser.role.title})") },
                             leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
@@ -390,28 +483,35 @@ fun WashDashboardScreen(
                     selected = currentTab == 0,
                     onClick = { currentTab = 0 },
                     icon = { Icon(Icons.Default.ReceiptLong, contentDescription = null) },
-                    label = { Text("Kasir") },
+                    label = { Text("Kasir", maxLines = 1) },
                     modifier = Modifier.testTag("nav_cashier_tab")
                 )
                 NavigationBarItem(
                     selected = currentTab == 1,
                     onClick = { currentTab = 1 },
-                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
-                    label = { Text("Bulanan") },
-                    modifier = Modifier.testTag("nav_monthly_tab")
+                    icon = { Icon(Icons.Default.Payments, contentDescription = null) },
+                    label = { Text("Pengeluaran", maxLines = 1) },
+                    modifier = Modifier.testTag("nav_expense_tab")
                 )
                 NavigationBarItem(
                     selected = currentTab == 2,
                     onClick = { currentTab = 2 },
-                    icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
-                    label = { Text("Analisis") },
-                    modifier = Modifier.testTag("nav_analysis_tab")
+                    icon = { Icon(Icons.Default.CalendarMonth, contentDescription = null) },
+                    label = { Text("Bulanan", maxLines = 1) },
+                    modifier = Modifier.testTag("nav_monthly_tab")
                 )
                 NavigationBarItem(
                     selected = currentTab == 3,
                     onClick = { currentTab = 3 },
+                    icon = { Icon(Icons.Default.BarChart, contentDescription = null) },
+                    label = { Text("Analisis", maxLines = 1) },
+                    modifier = Modifier.testTag("nav_analysis_tab")
+                )
+                NavigationBarItem(
+                    selected = currentTab == 4,
+                    onClick = { currentTab = 4 },
                     icon = { Icon(Icons.Default.Savings, contentDescription = null) },
-                    label = { Text("Impian") },
+                    label = { Text("Impian", maxLines = 1) },
                     modifier = Modifier.testTag("nav_dream_goal_tab")
                 )
             }
@@ -426,6 +526,16 @@ fun WashDashboardScreen(
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
                     text = { Text("Catat Lengkap") },
                     modifier = Modifier.testTag("add_custom_wash_fab")
+                )
+            } else if (currentTab == 1) {
+                ExtendedFloatingActionButton(
+                    onClick = {
+                        editingExpense = null
+                        showAddExpenseDialog = true
+                    },
+                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    text = { Text("Catat Pengeluaran") },
+                    modifier = Modifier.testTag("add_expense_fab")
                 )
             }
         }
@@ -569,12 +679,29 @@ fun WashDashboardScreen(
                                 }
                             }
 
-                            TextButton(
-                                onClick = { showSwitchUserDialog = true },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                modifier = Modifier.testTag("switch_user_button")
-                            ) {
-                                Text("Ganti", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(
+                                    onClick = {
+                                        viewModel.refreshActiveUsers()
+                                        showActiveUsersDialog = true
+                                    },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.testTag("who_is_active_button")
+                                ) {
+                                    Text(
+                                        "Siapa Aktif (${activeUsers.count { it.isOnlineNow() }})",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color(0xFF16A34A)
+                                    )
+                                }
+                                TextButton(
+                                    onClick = { showSwitchUserDialog = true },
+                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
+                                    modifier = Modifier.testTag("switch_user_button")
+                                ) {
+                                    Text("Ganti", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -1159,6 +1286,25 @@ fun WashDashboardScreen(
             }
         }
     } else if (tab == 1) {
+        ExpenseScreen(
+            expenses = allExpenses,
+            todayTotal = todayExpensesTotal,
+            monthlyTotal = currentMonthExpensesTotal,
+            monthlyOwnerShare = monthlySummary.totalOwnerShare,
+            onAddExpenseClick = {
+                editingExpense = null
+                showAddExpenseDialog = true
+            },
+            onEditExpenseClick = { exp ->
+                editingExpense = exp
+                showAddExpenseDialog = true
+            },
+            onDeleteExpenseClick = { exp ->
+                expenseToDelete = exp
+            },
+            modifier = Modifier.padding(innerPadding)
+        )
+    } else if (tab == 2) {
         MonthlyRecapScreen(
             viewModel = viewModel,
             monthlySummary = monthlySummary,
@@ -1171,7 +1317,7 @@ fun WashDashboardScreen(
             },
             modifier = Modifier.padding(innerPadding)
         )
-    } else if (tab == 2) {
+    } else if (tab == 3) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
@@ -1491,6 +1637,96 @@ fun WashDashboardScreen(
             onDismiss = { showMaintenanceDialog = false },
             onConfirm = { enabled, message, itPassword ->
                 viewModel.setMaintenanceMode(enabled, message, itPassword)
+            }
+        )
+    }
+
+    // Dialog: Siapa yang Sedang Aktif & Kapan Terakhir Masuk
+    if (showActiveUsersDialog) {
+        ActiveUsersDialog(
+            activeUsers = activeUsers,
+            onRefresh = { viewModel.refreshActiveUsers() },
+            onDismiss = { showActiveUsersDialog = false }
+        )
+    }
+
+    // Dialog: Test Push Notifikasi ke Semua Orang
+    if (showTestPushDialog) {
+        TestPushDialog(
+            senderName = currentUser.name,
+            onSendPush = { title, message ->
+                showTestPushDialog = false
+                viewModel.sendTestPushNotification(title, message) { _, msg ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(msg)
+                    }
+                }
+            },
+            onDismiss = { showTestPushDialog = false }
+        )
+    }
+
+    // Dialog: Tambah / Edit Pengeluaran Toko
+    if (showAddExpenseDialog) {
+        AddEditExpenseDialog(
+            initialExpense = editingExpense,
+            onSave = { title, category, amount, note, timestamp ->
+                viewModel.saveStoreExpense(
+                    id = editingExpense?.id ?: 0L,
+                    title = title,
+                    category = category,
+                    amount = amount,
+                    note = note,
+                    timestamp = timestamp
+                ) { _, msg ->
+                    coroutineScope.launch {
+                        snackbarHostState.showSnackbar(msg)
+                    }
+                }
+                showAddExpenseDialog = false
+                editingExpense = null
+            },
+            onDismiss = {
+                showAddExpenseDialog = false
+                editingExpense = null
+            }
+        )
+    }
+
+    // Dialog: Konfirmasi Hapus Pengeluaran Toko
+    expenseToDelete?.let { expense ->
+        AlertDialog(
+            onDismissRequest = { expenseToDelete = null },
+            title = { Text("Hapus Pengeluaran Toko?") },
+            text = {
+                Text("Pengeluaran '${expense.title}' (${FormatUtils.formatRupiah(expense.amount)}) akan dihapus permanen.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val exp = expenseToDelete
+                        expenseToDelete = null
+                        if (exp != null) {
+                            viewModel.deleteStoreExpense(exp) { _, msg ->
+                                coroutineScope.launch {
+                                    snackbarHostState.showSnackbar(msg)
+                                }
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    modifier = Modifier.testTag("confirm_delete_expense_button")
+                ) {
+                    Text("Hapus")
+                }
+            },
+            dismissButton = {
+                OutlinedButton(
+                    onClick = { expenseToDelete = null },
+                    modifier = Modifier.testTag("cancel_delete_expense_button")
+                ) {
+                    Text("Batal")
+                }
             }
         )
     }

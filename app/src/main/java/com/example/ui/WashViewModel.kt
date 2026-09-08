@@ -2,9 +2,12 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Context
+import android.os.Build
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.local.AppDatabase
+import com.example.data.model.StoreExpense
+import com.example.data.model.UserPresence
 import com.example.data.model.WashRecord
 import com.example.data.model.Worker
 import com.example.data.repository.FirestoreWashRepository
@@ -12,6 +15,7 @@ import com.example.data.repository.MaintenanceStatusData
 import com.example.data.repository.WashRepository
 import com.example.util.CorporateReportGenerator
 import com.example.util.FormatUtils
+import com.example.util.NotificationHelper
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -138,7 +142,9 @@ data class MonthlySummaryData(
     val washerStats: List<MonthlyWasherStat>,
     val cashAmount: Long,
     val qrisAmount: Long,
-    val transferAmount: Long
+    val transferAmount: Long,
+    val totalExpenses: Long = 0L,
+    val netProfitAfterExpenses: Long = 0L
 )
 
 data class CompanyProfile(
@@ -185,6 +191,94 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     private val userPrefs by lazy {
         getApplication<Application>().getSharedPreferences("user_profile_prefs", Context.MODE_PRIVATE)
+    }
+
+    val deviceId: String by lazy {
+        var id = userPrefs.getString("device_unique_id", null)
+        if (id.isNullOrBlank()) {
+            id = "dev_" + java.util.UUID.randomUUID().toString().take(8)
+            userPrefs.edit().putString("device_unique_id", id).apply()
+        }
+        id
+    }
+
+    private val _activeUsers = MutableStateFlow<List<UserPresence>>(emptyList())
+    val activeUsers: StateFlow<List<UserPresence>> = _activeUsers.asStateFlow()
+
+    fun getLastLoginTime(role: UserRole): Long {
+        return userPrefs.getLong("last_login_${role.name}", userPrefs.getLong("last_login_time", System.currentTimeMillis()))
+    }
+
+    fun recordUserActivity(isLogin: Boolean = false) {
+        val user = _currentUser.value
+        val now = System.currentTimeMillis()
+        if (isLogin) {
+            userPrefs.edit()
+                .putLong("last_login_${user.role.name}", now)
+                .putLong("last_login_time", now)
+                .apply()
+        }
+        val lastLogin = getLastLoginTime(user.role)
+        val presence = UserPresence(
+            userId = "${deviceId}_${user.role.name.lowercase()}",
+            userName = user.name,
+            role = user.role.title,
+            lastActiveTime = now,
+            lastLoginTime = lastLogin,
+            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+            isOnline = true
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.updateUserPresence(presence)
+        }
+    }
+
+    fun refreshActiveUsers() {
+        recordUserActivity(isLogin = false)
+    }
+
+    private val notifiedOrderTimestamps = mutableSetOf<Long>()
+    private val notifiedBroadcastPushIds = mutableSetOf<String>()
+    private val appLaunchTime = System.currentTimeMillis()
+
+    fun notifyOrderOnce(record: WashRecord) {
+        if (record.timestamp in notifiedOrderTimestamps) return
+        notifiedOrderTimestamps.add(record.timestamp)
+        val now = System.currentTimeMillis()
+        if (now - record.timestamp < 5 * 60 * 1000L) {
+            NotificationHelper.notifyNewTransaction(getApplication(), record)
+        }
+    }
+
+    fun markOrderAsNotified(timestamp: Long) {
+        notifiedOrderTimestamps.add(timestamp)
+        NotificationHelper.markOrderHandledOrDeleted(timestamp)
+    }
+
+    fun sendTestPushNotification(
+        title: String,
+        message: String,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        val sender = _currentUser.value.name
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                firestoreRepository.sendBroadcastPush(
+                    title = title,
+                    message = message,
+                    senderName = sender
+                )
+                NotificationHelper.showNotification(
+                    getApplication(),
+                    title,
+                    "$message\n(Pengirim: $sender)"
+                )
+                NotificationHelper.playChime(getApplication())
+                onComplete(true, "Push notifikasi berhasil dikirim ke semua orang!")
+            } catch (e: Exception) {
+                onComplete(false, "Gagal mengirim push: ${e.message}")
+            }
+        }
     }
 
     private val _currentUser = MutableStateFlow(loadCurrentUser())
@@ -238,14 +332,18 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         val finalName = name.ifBlank { getAccountName(targetRole) }.trim()
         val finalPassword = if (!newPasswordInput.isNullOrBlank()) newPasswordInput.trim() else savedPass
 
+        val now = System.currentTimeMillis()
         userPrefs.edit()
             .putString("user_role", targetRole.name)
             .putString("user_name", finalName)
             .putString("account_name_${targetRole.name}", finalName)
             .putString("account_pass_${targetRole.name}", finalPassword)
+            .putLong("last_login_${targetRole.name}", now)
+            .putLong("last_login_time", now)
             .apply()
 
         _currentUser.value = CurrentUser(name = finalName, role = targetRole)
+        recordUserActivity(isLogin = true)
 
         viewModelScope.launch(Dispatchers.IO) {
             firestoreRepository.saveAccountFields(
@@ -263,11 +361,16 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         val finalName = name.trim().ifBlank { getAccountName(role) }
         val updated = CurrentUser(name = finalName, role = role)
         _currentUser.value = updated
+        val now = System.currentTimeMillis()
         userPrefs.edit()
             .putString("user_role", role.name)
             .putString("user_name", finalName)
             .putString("account_name_${role.name}", finalName)
+            .putLong("last_login_${role.name}", now)
+            .putLong("last_login_time", now)
             .apply()
+
+        recordUserActivity(isLogin = true)
 
         viewModelScope.launch(Dispatchers.IO) {
             firestoreRepository.saveAccountFields(mapOf("${role.name}_name" to finalName))
@@ -308,7 +411,95 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         val database = AppDatabase.getDatabase(application)
-        repository = WashRepository(database.washDao())
+        repository = WashRepository(database.washDao(), database.expenseDao())
+
+        // Purge Asep, Budi, Joko from workers permanently
+        viewModelScope.launch(Dispatchers.IO) {
+            val namesToRemove = setOf("asep", "budi", "joko")
+            try {
+                val localWorkers = repository.getActiveWorkers().first()
+                for (w in localWorkers) {
+                    if (w.name.trim().lowercase() in namesToRemove) {
+                        repository.deleteWorker(w)
+                    }
+                }
+                listOf("Asep", "Budi", "Joko").forEach { name ->
+                    firestoreRepository.deleteWorkerRemote(name)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        // Register initial login presence
+        recordUserActivity(isLogin = true)
+
+        // Heartbeat active presence every 45s
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(45_000L)
+                recordUserActivity(isLogin = false)
+            }
+        }
+
+        // Listen for active users in real-time
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenActiveUsers().collect { remoteUsers ->
+                        val combined = remoteUsers.toMutableList()
+                        val user = _currentUser.value
+                        val myPresence = UserPresence(
+                            userId = "${deviceId}_${user.role.name.lowercase()}",
+                            userName = user.name,
+                            role = user.role.title,
+                            lastActiveTime = System.currentTimeMillis(),
+                            lastLoginTime = getLastLoginTime(user.role),
+                            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+                            isOnline = true
+                        )
+                        val idx = combined.indexOfFirst { it.userId == myPresence.userId }
+                        if (idx >= 0) {
+                            combined[idx] = myPresence
+                        } else {
+                            combined.add(0, myPresence)
+                        }
+                        _activeUsers.value = combined
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        } else {
+            val user = _currentUser.value
+            _activeUsers.value = listOf(
+                UserPresence(
+                    userId = "${deviceId}_${user.role.name.lowercase()}",
+                    userName = user.name,
+                    role = user.role.title,
+                    lastActiveTime = System.currentTimeMillis(),
+                    lastLoginTime = getLastLoginTime(user.role),
+                    deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+                    isOnline = true
+                )
+            )
+        }
+
+        // Listen for store expenses in real-time
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenExpenses().collect { remoteExpenses ->
+                        val local = repository.getAllExpenses().first()
+                        val localTimestamps = local.map { it.timestamp }.toSet()
+                        for (remote in remoteExpenses) {
+                            if (remote.timestamp !in localTimestamps) {
+                                repository.insertExpense(remote)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
 
         // Listen for maintenance mode changes from any device (works independently of the
         // transaction sync block below, since it should still lock the app even if other
@@ -344,6 +535,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                             if (remote.timestamp !in localTimestamps) {
                                 repository.insertRecord(remote)
                                 newlyAdded++
+                                notifyOrderOnce(remote)
                             }
                         }
 
@@ -358,6 +550,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                             if (removedFromCloud.isNotEmpty()) {
                                 val toDelete = local.filter { it.timestamp in removedFromCloud }
                                 for (rec in toDelete) {
+                                    markOrderAsNotified(rec.timestamp)
                                     repository.deleteRecord(rec)
                                     removedLocally++
                                 }
@@ -416,8 +609,10 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                         val local = repository.getActiveWorkers().first()
                         val localNames = local.map { it.name }.toSet()
 
+                        val bannedNames = setOf("asep", "budi", "joko")
                         // Add petugas that exist in the cloud but not yet on this phone.
                         for (remote in remoteWorkers) {
+                            if (remote.name.trim().lowercase() in bannedNames) continue
                             if (remote.name !in localNames) {
                                 repository.insertWorker(remote)
                             }
@@ -439,6 +634,26 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (_: Exception) {
                     // Ignore: worker sync is best-effort, local petugas list remains usable offline
+                }
+            }
+
+            // Listen for broadcast push notifications sent from any device
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenBroadcastPushes().collect { pushes ->
+                        for (push in pushes) {
+                            if (push.timestamp >= appLaunchTime - 15_000L && push.id !in notifiedBroadcastPushIds) {
+                                notifiedBroadcastPushIds.add(push.id)
+                                NotificationHelper.showNotification(
+                                    getApplication(),
+                                    push.title.ifBlank { "Notifikasi Lion Steam" },
+                                    "${push.message}\n(Pengirim: ${push.senderName})"
+                                )
+                                NotificationHelper.playChime(getApplication())
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
                 }
             }
 
@@ -465,6 +680,103 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     val activeWorkers: StateFlow<List<Worker>> = repository.getActiveWorkers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Store Expenses (Pengeluaran Toko)
+    val allExpenses: StateFlow<List<StoreExpense>> = repository.getAllExpenses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val todayExpensesTotal: StateFlow<Long> = allExpenses.map { list ->
+        val startOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+        list.filter { it.timestamp in startOfDay..endOfDay }.sumOf { it.amount }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val currentMonthExpensesTotal: StateFlow<Long> = allExpenses.map { list ->
+        val now = Calendar.getInstance()
+        val startOfMonth = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endOfMonth = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+        list.filter { it.timestamp in startOfMonth..endOfMonth }.sumOf { it.amount }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    fun saveStoreExpense(
+        id: Long = 0L,
+        title: String,
+        category: String,
+        amount: Long,
+        note: String = "",
+        timestamp: Long = System.currentTimeMillis(),
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        val trimmed = title.trim()
+        if (trimmed.isBlank()) {
+            onComplete(false, "Nama pengeluaran tidak boleh kosong")
+            return
+        }
+        if (amount <= 0L) {
+            onComplete(false, "Nominal pengeluaran harus lebih besar dari Rp 0")
+            return
+        }
+        val user = _currentUser.value
+        val expense = StoreExpense(
+            id = id,
+            title = trimmed,
+            category = category,
+            amount = amount,
+            timestamp = timestamp,
+            recordedBy = user.name,
+            note = note.trim()
+        )
+        viewModelScope.launch {
+            val newId = if (id == 0L) {
+                repository.insertExpense(expense)
+            } else {
+                repository.updateExpense(expense)
+                id
+            }
+            val finalExp = expense.copy(id = newId)
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.saveExpense(finalExp)
+            }
+            onComplete(true, "Pengeluaran toko berhasil dicatat!")
+        }
+    }
+
+    fun deleteStoreExpense(
+        expense: StoreExpense,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        viewModelScope.launch {
+            repository.deleteExpense(expense)
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.deleteExpenseRemote(expense.timestamp)
+            }
+            onComplete(true, "Pengeluaran toko berhasil dihapus!")
+        }
+    }
 
     private val allRecords: StateFlow<List<WashRecord>> = repository.getAllRecords()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -583,8 +895,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     val monthlySummaryData: StateFlow<MonthlySummaryData> = combine(
         allRecords,
         _monthlyRecapYear,
-        _monthlyRecapMonth
-    ) { records, year, month ->
+        _monthlyRecapMonth,
+        allExpenses
+    ) { records, year, month, expenses ->
         val monthNames = listOf(
             "Januari", "Februari", "Maret", "April", "Mei", "Juni",
             "Juli", "Agustus", "September", "Oktober", "November", "Desember"
@@ -722,6 +1035,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         val avgGross = totalGross / divisor
         val avgOwner = totalOwnerShare / divisor
 
+        val monthExpenses = expenses.filter { it.timestamp in startMillis..endMillis }.sumOf { it.amount }
+        val netProfit = totalOwnerShare - monthExpenses
+
         MonthlySummaryData(
             year = year,
             month = month,
@@ -740,7 +1056,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             washerStats = washerStats,
             cashAmount = cash,
             qrisAmount = qris,
-            transferAmount = transfer
+            transferAmount = transfer,
+            totalExpenses = monthExpenses,
+            netProfitAfterExpenses = netProfit
         )
     }.flowOn(Dispatchers.Default)
     .stateIn(
@@ -764,7 +1082,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             washerStats = emptyList(),
             cashAmount = 0L,
             qrisAmount = 0L,
-            transferAmount = 0L
+            transferAmount = 0L,
+            totalExpenses = 0L,
+            netProfitAfterExpenses = 0L
         )
     )
 
@@ -1201,6 +1521,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 )
                 repository.insertRecord(record)
                 firestoreRepository.saveTransaction(record)
+                notifyOrderOnce(record)
             }
 
             _selectedDateMillis.value = targetDateMillis
@@ -1246,6 +1567,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertRecord(record)
             firestoreRepository.saveTransaction(record)
+            notifyOrderOnce(record)
         }
     }
 
@@ -1276,6 +1598,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             )
             repository.insertRecord(record)
             firestoreRepository.saveTransaction(record)
+            notifyOrderOnce(record)
         }
     }
 
@@ -1319,7 +1642,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val finalId = if (id == 0L) {
-                repository.insertRecord(record)
+                val newId = repository.insertRecord(record)
+                notifyOrderOnce(record.copy(id = newId))
+                newId
             } else {
                 repository.updateRecord(record)
                 id
@@ -1370,6 +1695,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun deleteRecord(record: WashRecord) {
+        markOrderAsNotified(record.timestamp)
         viewModelScope.launch {
             repository.deleteRecord(record)
             firestoreRepository.deleteTransaction(record)
@@ -1380,6 +1706,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             val (start, end) = FormatUtils.getDayTimestampRange(targetDateMillis)
             val recordsToDelete = repository.getAllRecords().first().filter { it.timestamp in start..end }
+            recordsToDelete.forEach { markOrderAsNotified(it.timestamp) }
             repository.deleteRecordsBetween(start, end)
             for (rec in recordsToDelete) {
                 firestoreRepository.deleteTransaction(rec)
