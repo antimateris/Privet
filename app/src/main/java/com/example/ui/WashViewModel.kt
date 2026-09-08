@@ -57,9 +57,10 @@ data class WasherShareBreakdown(
 )
 
 enum class UserRole(val title: String, val subtitle: String) {
-    KASIR("Kasir (Operator)", "Input motor cuci & cetak struk"),
-    MANAGER_KEUANGAN("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan"),
-    PEMILIK("Team IT", "Verifikasi, validasi, sanggah transaksi & kelola mode maintenance")
+    KASIR("Kasir", "Input motor cuci & cetak struk"),
+    MANAJER_KEUANGAN("Manajer Keuangan", "Pantau omset, laba, tabungan & rekap laporan keuangan"),
+    PEMILIK_USAHA("Pemilik Usaha", "Akses penuh keuangan, laba, tabungan & bagi hasil"),
+    TEAM_IT("Team IT", "Verifikasi, validasi, sanggah transaksi & kelola mode maintenance")
 }
 
 data class CurrentUser(
@@ -198,6 +199,88 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().getSharedPreferences("user_profile_prefs", Context.MODE_PRIVATE)
     }
 
+    init {
+        // Must run before anything else reads "user_role" / "account_name_*" /
+        // "account_pass_*" so people updating from the old 3-role version don't
+        // get bumped back to Kasir or lose their saved passwords.
+        migrateLegacyRoleKeys()
+    }
+
+    /**
+     * One-time migration for people updating from the old app version where the
+     * role enum names didn't match their real-world meaning:
+     *   - UserRole.MANAGER_KEUANGAN was actually shown & used as "Pemilik Usaha" (Owner)
+     *   - UserRole.PEMILIK was actually shown & used as "Team IT"
+     * The new version renames these to UserRole.PEMILIK_USAHA and UserRole.TEAM_IT
+     * (and adds a real, separate UserRole.MANAJER_KEUANGAN). Without this migration,
+     * an update would silently fail UserRole.valueOf() on the old saved value and
+     * reset everyone back to Kasir, and every saved username/password for the
+     * Pemilik Usaha & Team IT accounts would appear to vanish. This function
+     * rewrites the old SharedPreferences keys to their new names exactly once.
+     */
+    private fun migrateLegacyRoleKeys() {
+        if (userPrefs.getBoolean("migrated_roles_v2", false)) return
+
+        val editor = userPrefs.edit()
+
+        // Old enum constant name -> new enum constant name.
+        val legacyToNew = mapOf(
+            "MANAGER_KEUANGAN" to UserRole.PEMILIK_USAHA.name,
+            "PEMILIK" to UserRole.TEAM_IT.name
+        )
+
+        // Migrate the currently logged-in role, if it was saved under an old name.
+        val currentRoleStr = userPrefs.getString("user_role", null)
+        if (currentRoleStr != null && legacyToNew.containsKey(currentRoleStr)) {
+            editor.putString("user_role", legacyToNew.getValue(currentRoleStr))
+        }
+
+        // Migrate each per-role field: display name, password, last login time.
+        for ((legacyName, newName) in legacyToNew) {
+            val oldNameKey = "account_name_$legacyName"
+            val newNameKey = "account_name_$newName"
+            if (userPrefs.contains(oldNameKey) && !userPrefs.contains(newNameKey)) {
+                userPrefs.getString(oldNameKey, null)?.let { editor.putString(newNameKey, it) }
+            }
+
+            val oldPassKey = "account_pass_$legacyName"
+            val newPassKey = "account_pass_$newName"
+            if (userPrefs.contains(oldPassKey) && !userPrefs.contains(newPassKey)) {
+                userPrefs.getString(oldPassKey, null)?.let { editor.putString(newPassKey, it) }
+            }
+
+            val oldLoginKey = "last_login_$legacyName"
+            val newLoginKey = "last_login_$newName"
+            if (userPrefs.contains(oldLoginKey) && !userPrefs.contains(newLoginKey)) {
+                editor.putLong(newLoginKey, userPrefs.getLong(oldLoginKey, 0L))
+            }
+        }
+
+        editor.putBoolean("migrated_roles_v2", true)
+        editor.apply()
+
+        // Best-effort: push the migrated fields to Firestore too, so other devices
+        // sharing the same shop account see the renamed keys instead of stale ones.
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val migratedFields = mutableMapOf<String, Any>()
+                for (newName in legacyToNew.values) {
+                    userPrefs.getString("account_name_$newName", null)?.let {
+                        migratedFields["${newName}_name"] = it
+                    }
+                    userPrefs.getString("account_pass_$newName", null)?.let {
+                        migratedFields["${newName}_pass"] = it
+                    }
+                }
+                if (migratedFields.isNotEmpty()) {
+                    firestoreRepository.saveAccountFields(migratedFields)
+                }
+            } catch (_: Exception) {
+                // Ignore: Firestore sync is best-effort, local migration already succeeded.
+            }
+        }
+    }
+
     val deviceId: String by lazy {
         var id = userPrefs.getString("device_unique_id", null)
         if (id.isNullOrBlank()) {
@@ -303,8 +386,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         }
         val defaultName = when (role) {
             UserRole.KASIR -> "Kasir Utama"
-            UserRole.MANAGER_KEUANGAN -> "Pemilik Usaha"
-            UserRole.PEMILIK -> "Team IT"
+            UserRole.MANAJER_KEUANGAN -> "Manajer Keuangan"
+            UserRole.PEMILIK_USAHA -> "Pemilik Usaha"
+            UserRole.TEAM_IT -> "Team IT"
         }
         val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
         return CurrentUser(name = name, role = role)
@@ -313,8 +397,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     fun getAccountName(role: UserRole): String {
         val defaultName = when (role) {
             UserRole.KASIR -> "Kasir Utama"
-            UserRole.MANAGER_KEUANGAN -> "Pemilik Usaha"
-            UserRole.PEMILIK -> "Team IT"
+            UserRole.MANAJER_KEUANGAN -> "Manajer Keuangan"
+            UserRole.PEMILIK_USAHA -> "Pemilik Usaha"
+            UserRole.TEAM_IT -> "Team IT"
         }
         return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
     }
@@ -328,43 +413,59 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         return enteredPass.trim() == saved.trim()
     }
 
-    fun switchUserRoleWithAuth(
-        targetRole: UserRole,
-        name: String,
+    /**
+     * Logs a user in purely from a username + password pair, without ever exposing
+     * a role picker in the UI. The role is resolved server-side (here, locally) by
+     * matching the entered username against the stored account name of each of the
+     * 4 roles (Kasir, Manajer Keuangan, Pemilik Usaha, Team IT).
+     */
+    fun loginWithCredentials(
+        username: String,
         passwordInput: String,
         newPasswordInput: String? = null
     ): Pair<Boolean, String> {
-        val savedPass = getAccountPassword(targetRole)
-        if (passwordInput.trim() != savedPass.trim()) {
-            return Pair(false, "Password salah untuk akun ${targetRole.title}!")
+        val finalUsername = username.trim()
+        if (finalUsername.isBlank()) {
+            return Pair(false, "Harap masukkan username!")
+        }
+        if (passwordInput.isBlank()) {
+            return Pair(false, "Harap masukkan password!")
         }
 
-        val finalName = name.ifBlank { getAccountName(targetRole) }.trim()
+        val targetRole = UserRole.values().firstOrNull {
+            getAccountName(it).equals(finalUsername, ignoreCase = true)
+        } ?: return Pair(false, "Username tidak ditemukan!")
+
+        val savedPass = getAccountPassword(targetRole)
+        if (passwordInput.trim() != savedPass.trim()) {
+            return Pair(false, "Password salah!")
+        }
+
         val finalPassword = if (!newPasswordInput.isNullOrBlank()) newPasswordInput.trim() else savedPass
 
         val now = System.currentTimeMillis()
         userPrefs.edit()
             .putString("user_role", targetRole.name)
-            .putString("user_name", finalName)
-            .putString("account_name_${targetRole.name}", finalName)
+            .putString("user_name", finalUsername)
+            .putString("account_name_${targetRole.name}", finalUsername)
             .putString("account_pass_${targetRole.name}", finalPassword)
             .putLong("last_login_${targetRole.name}", now)
             .putLong("last_login_time", now)
             .apply()
 
-        _currentUser.value = CurrentUser(name = finalName, role = targetRole)
+        _currentUser.value = CurrentUser(name = finalUsername, role = targetRole)
         recordUserActivity(isLogin = true)
 
         viewModelScope.launch(Dispatchers.IO) {
             firestoreRepository.saveAccountFields(
                 mapOf(
-                    "${targetRole.name}_name" to finalName,
+                    "${targetRole.name}_name" to finalUsername,
                     "${targetRole.name}_pass" to finalPassword
                 )
             )
         }
 
-        return Pair(true, "Berhasil masuk sebagai $finalName (${targetRole.title})")
+        return Pair(true, "Berhasil masuk sebagai $finalUsername (${targetRole.title})")
     }
 
     fun switchUserRole(role: UserRole, name: String) {
@@ -389,7 +490,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Turns maintenance mode on or off for every device, gated behind the Team IT
-     * (UserRole.PEMILIK) password only. This is the single dedicated technical account -
+     * (UserRole.TEAM_IT) password only. This is the single dedicated technical account -
      * the Kasir and Pemilik Usaha (Owner) accounts intentionally cannot authorize this.
      */
     fun setMaintenanceMode(
@@ -397,7 +498,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         message: String,
         itPassword: String
     ): Pair<Boolean, String> {
-        if (!verifyPassword(UserRole.PEMILIK, itPassword)) {
+        if (!verifyPassword(UserRole.TEAM_IT, itPassword)) {
             return Pair(false, "Password Team IT salah!")
         }
 
@@ -421,7 +522,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Publishes a new version release to Firestore.
-     * STRICT REQUIREMENT: Only the Team IT (UserRole.PEMILIK) password can authorize this action.
+     * STRICT REQUIREMENT: Only the Team IT (UserRole.TEAM_IT) password can authorize this action.
      */
     fun pushNewAppVersion(
         versionCode: Long,
@@ -433,7 +534,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         itPassword: String,
         onComplete: (Boolean, String) -> Unit = { _, _ -> }
     ) {
-        if (!verifyPassword(UserRole.PEMILIK, itPassword)) {
+        if (!verifyPassword(UserRole.TEAM_IT, itPassword)) {
             onComplete(false, "Password Team IT salah! Hanya akun Team IT yang berhak merilis pembaruan.")
             return
         }
