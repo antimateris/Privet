@@ -37,14 +37,12 @@ import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.DirectionsBike
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Group
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
@@ -112,7 +110,6 @@ import com.example.ui.dialogs.DisputeTransactionDialog
 import com.example.ui.dialogs.EditDreamGoalDialog
 import com.example.ui.dialogs.EditPastDateRevenueDialog
 import com.example.ui.dialogs.ExportReportDialog
-import com.example.ui.dialogs.ItControlCenterDialog
 import com.example.ui.dialogs.ManageWorkersDialog
 import com.example.ui.dialogs.MaintenanceModeDialog
 import com.example.ui.dialogs.PostSaveReceiptOptionDialog
@@ -150,7 +147,6 @@ fun WashDashboardScreen(
     val monthlySummary by viewModel.monthlySummaryData.collectAsStateWithLifecycle()
     val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsStateWithLifecycle()
     val maintenanceStatus by viewModel.maintenanceStatus.collectAsStateWithLifecycle()
-    val companyProfile by viewModel.companyProfile.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
 
     var currentTab by remember { mutableStateOf(0) }
@@ -161,7 +157,6 @@ fun WashDashboardScreen(
     var recordToDelete by remember { mutableStateOf<WashRecord?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var showMaintenanceDialog by remember { mutableStateOf(false) }
-    var showItControlCenterDialog by remember { mutableStateOf(false) }
     var showEditDreamGoalDialog by remember { mutableStateOf(false) }
     var showCalendarDialog by remember { mutableStateOf(false) }
     var showEditPastRevenueDialog by remember { mutableStateOf(false) }
@@ -270,24 +265,6 @@ fun WashDashboardScreen(
                         Icon(Icons.Default.Group, contentDescription = "Kelola Petugas")
                     }
 
-                    // Tombol Refresh / Sinkronisasi Cepat
-                    IconButton(
-                        onClick = {
-                            viewModel.syncAllLocalToCloud { _, msg ->
-                                coroutineScope.launch {
-                                    snackbarHostState.showSnackbar(msg)
-                                }
-                            }
-                        },
-                        modifier = Modifier.testTag("appbar_refresh_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh Sinkronisasi",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
                     // User Profile / Role Switcher
                     IconButton(
                         onClick = { showSwitchUserDialog = true },
@@ -300,7 +277,6 @@ fun WashDashboardScreen(
                                 UserRole.KASIR -> Color(0xFF0284C7)
                                 UserRole.MANAGER_KEUANGAN -> Color(0xFFD97706)
                                 UserRole.PEMILIK -> Color(0xFF16A34A)
-                                UserRole.IT_SUPPORT -> Color(0xFF7C3AED)
                             }
                         )
                     }
@@ -348,18 +324,15 @@ fun WashDashboardScreen(
                             modifier = Modifier.testTag("menu_sync_cloud")
                         )
 
-                        // Menu khusus IT Support (Maintenance, Test Notif, Edit Teks Aplikasi)
-                        if (currentUser.role == UserRole.IT_SUPPORT) {
-                            DropdownMenuItem(
-                                text = { Text("Pusat Kontrol IT Support") },
-                                leadingIcon = { Icon(Icons.Default.DeveloperMode, contentDescription = null, tint = Color(0xFF7C3AED)) },
-                                onClick = {
-                                    showMenu = false
-                                    showItControlCenterDialog = true
-                                },
-                                modifier = Modifier.testTag("menu_it_control_center")
-                            )
-                        }
+                        DropdownMenuItem(
+                            text = { Text("Mode Maintenance") },
+                            leadingIcon = { Icon(Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.error) },
+                            onClick = {
+                                showMenu = false
+                                showMaintenanceDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_maintenance_mode")
+                        )
 
                         DropdownMenuItem(
                             text = {
@@ -544,7 +517,6 @@ fun WashDashboardScreen(
                             UserRole.KASIR -> Color(0xFFF0F9FF)
                             UserRole.MANAGER_KEUANGAN -> Color(0xFFFFFBEB)
                             UserRole.PEMILIK -> Color(0xFFF0FDF4)
-                            UserRole.IT_SUPPORT -> Color(0xFFFAF5FF)
                         },
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(
@@ -553,7 +525,6 @@ fun WashDashboardScreen(
                                 UserRole.KASIR -> Color(0xFFBAE6FD)
                                 UserRole.MANAGER_KEUANGAN -> Color(0xFFFDE68A)
                                 UserRole.PEMILIK -> Color(0xFFBBF7D0)
-                                UserRole.IT_SUPPORT -> Color(0xFFDDD6FE)
                             }
                         ),
                         modifier = Modifier
@@ -578,7 +549,6 @@ fun WashDashboardScreen(
                                         UserRole.KASIR -> Color(0xFF0284C7)
                                         UserRole.MANAGER_KEUANGAN -> Color(0xFFD97706)
                                         UserRole.PEMILIK -> Color(0xFF16A34A)
-                                        UserRole.IT_SUPPORT -> Color(0xFF7C3AED)
                                     },
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -1495,13 +1465,14 @@ fun WashDashboardScreen(
         )
     }
 
-    // Dialog: Ganti Akun Pengguna Mandiri (Username & Password mandiri)
+    // Dialog: Ganti Akun Pengguna (Kasir / Manager / Pemilik)
     if (showSwitchUserDialog) {
         SwitchUserDialog(
             currentUser = currentUser,
+            getAccountName = { role -> viewModel.getAccountName(role) },
             onDismiss = { showSwitchUserDialog = false },
-            onLogin = { username, password, newPassword ->
-                val result = viewModel.loginWithCredentials(username, password, newPassword)
+            onConfirm = { targetRole, name, password, newPassword ->
+                val result = viewModel.switchUserRoleWithAuth(targetRole, name, password, newPassword)
                 if (result.first) {
                     showSwitchUserDialog = false
                     coroutineScope.launch {
@@ -1513,41 +1484,13 @@ fun WashDashboardScreen(
         )
     }
 
-    // Dialog: Mode Maintenance (khusus Tim IT Support)
+    // Dialog: Mode Maintenance (kunci aplikasi di semua HP, khusus akun IT - Pemilik tidak bisa)
     if (showMaintenanceDialog) {
         MaintenanceModeDialog(
             currentStatus = maintenanceStatus,
             onDismiss = { showMaintenanceDialog = false },
             onConfirm = { enabled, message, itPassword ->
                 viewModel.setMaintenanceMode(enabled, message, itPassword)
-            }
-        )
-    }
-
-    // Dialog: Pusat Kontrol IT Support (Maintenance, Test Notifikasi, Edit Teks Aplikasi)
-    if (showItControlCenterDialog) {
-        ItControlCenterDialog(
-            maintenanceStatus = maintenanceStatus,
-            companyProfile = companyProfile,
-            onDismiss = { showItControlCenterDialog = false },
-            onSetMaintenance = { enabled, message, itPassword ->
-                viewModel.setMaintenanceMode(enabled, message, itPassword)
-            },
-            onPushBroadcast = { title, message, onComplete ->
-                viewModel.pushBroadcastNotification(title, message, onComplete)
-            },
-            onUpdateCompanyProfile = { companyName, divisionName, address, phone ->
-                viewModel.updateCompanyProfile(
-                    companyProfile.copy(
-                        companyName = companyName,
-                        divisionName = divisionName,
-                        companyAddress = address,
-                        companyPhone = phone
-                    )
-                )
-                coroutineScope.launch {
-                    snackbarHostState.showSnackbar("Teks dan profil aplikasi berhasil diperbarui!")
-                }
             }
         )
     }
