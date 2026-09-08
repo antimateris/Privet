@@ -583,8 +583,8 @@ class FirestoreWashRepository(
                 }
                 if (snapshot != null && snapshot.exists()) {
                     val info = AppUpdateInfo(
-                        latestVersionCode = snapshot.getLong("latestVersionCode") ?: 2L,
-                        latestVersionName = snapshot.getString("latestVersionName") ?: "1.1.0",
+                        latestVersionCode = snapshot.getLong("latestVersionCode") ?: 3L,
+                        latestVersionName = snapshot.getString("latestVersionName") ?: "1.2.0",
                         downloadUrl = snapshot.getString("downloadUrl") ?: "",
                         releaseNotes = snapshot.getString("releaseNotes") ?: "",
                         isForceUpdate = snapshot.getBoolean("isForceUpdate") ?: false,
