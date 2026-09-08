@@ -52,7 +52,7 @@ import com.example.data.repository.MaintenanceStatusData
 fun MaintenanceModeDialog(
     currentStatus: MaintenanceStatusData,
     onDismiss: () -> Unit,
-    onConfirm: (enabled: Boolean, message: String, ownerPassword: String) -> Pair<Boolean, String>
+    onConfirm: (enabled: Boolean, message: String, itPassword: String) -> Pair<Boolean, String>
 ) {
     var enabled by remember { mutableStateOf(currentStatus.enabled) }
     var message by remember { mutableStateOf(currentStatus.message) }
@@ -96,7 +96,7 @@ fun MaintenanceModeDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Kalau diaktifkan, semua perangkat yang sedang online akan terkunci dan tidak bisa memakai aplikasi sampai kamu nonaktifkan lagi. Cocok dipakai saat lagi ada perbaikan/update data.",
+                    text = "Kalau diaktifkan, semua perangkat yang sedang online akan terkunci dan tidak bisa memakai aplikasi sampai kamu nonaktifkan lagi. Cocok dipakai saat lagi ada perbaikan/update data. Fitur ini khusus akun Team IT - Pemilik/Kasir tidak bisa mengaktifkannya.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -159,8 +159,8 @@ fun MaintenanceModeDialog(
                         passwordInput = it
                         errorMessage = null
                     },
-                    label = { Text("Password Pemilik") },
-                    placeholder = { Text("Wajib diisi untuk konfirmasi") },
+                    label = { Text("Password Team IT") },
+                    placeholder = { Text("Wajib diisi untuk konfirmasi (akun Team IT)") },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     leadingIcon = {
@@ -232,7 +232,7 @@ fun MaintenanceModeDialog(
             Button(
                 onClick = {
                     if (passwordInput.isBlank()) {
-                        errorMessage = "Masukkan password Pemilik dulu!"
+                        errorMessage = "Masukkan password akun Team IT dulu!"
                         return@Button
                     }
                     val (success, resultMsg) = onConfirm(enabled, message, passwordInput)
@@ -266,4 +266,3 @@ fun MaintenanceModeDialog(
         }
     )
 }
-
