@@ -12,7 +12,6 @@ import com.example.data.repository.MaintenanceStatusData
 import com.example.data.repository.WashRepository
 import com.example.util.CorporateReportGenerator
 import com.example.util.FormatUtils
-import com.example.util.NotificationHelper
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -50,9 +49,8 @@ data class WasherShareBreakdown(
 
 enum class UserRole(val title: String, val subtitle: String) {
     KASIR("Kasir (Operator)", "Input motor cuci & cetak struk"),
-    MANAGER_KEUANGAN("Manager Keuangan", "Verifikasi, validasi & sanggah transaksi"),
-    PEMILIK("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan"),
-    IT_SUPPORT("Tim IT & Support", "Akses maintenance, tes notifikasi & kustomisasi aplikasi")
+    MANAGER_KEUANGAN("Pemilik Usaha (Owner)", "Akses penuh keuangan, laba & tabungan"),
+    PEMILIK("Team IT", "Verifikasi, validasi, sanggah transaksi & kelola mode maintenance")
 }
 
 data class CurrentUser(
@@ -179,13 +177,6 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         FirestoreWashRepository(context = getApplication<Application>())
     }
 
-    // Tracks the last broadcast notification ID processed by this device to avoid duplicate push.
-    // Persisted to SharedPreferences (not just an in-memory var) so that restarting the app
-    // doesn't forget it and re-fire the same old broadcast notification again.
-    private var lastReceivedBroadcastId: String?
-        get() = userPrefs.getString("last_broadcast_id", null)
-        set(value) = userPrefs.edit().putString("last_broadcast_id", value).apply()
-
     private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
@@ -208,9 +199,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         }
         val defaultName = when (role) {
             UserRole.KASIR -> "Kasir Utama"
-            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
-            UserRole.PEMILIK -> "Pemilik Usaha"
-            UserRole.IT_SUPPORT -> "IT Support"
+            UserRole.MANAGER_KEUANGAN -> "Pemilik Usaha"
+            UserRole.PEMILIK -> "Team IT"
         }
         val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
         return CurrentUser(name = name, role = role)
@@ -219,58 +209,19 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     fun getAccountName(role: UserRole): String {
         val defaultName = when (role) {
             UserRole.KASIR -> "Kasir Utama"
-            UserRole.MANAGER_KEUANGAN -> "Manager Keuangan"
-            UserRole.PEMILIK -> "Pemilik Usaha"
-            UserRole.IT_SUPPORT -> "IT Support"
+            UserRole.MANAGER_KEUANGAN -> "Pemilik Usaha"
+            UserRole.PEMILIK -> "Team IT"
         }
         return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
     }
 
     fun getAccountPassword(role: UserRole): String {
-        val defaultPass = if (role == UserRole.IT_SUPPORT) "itadmin" else "1234"
-        return userPrefs.getString("account_pass_${role.name}", defaultPass) ?: defaultPass
+        return userPrefs.getString("account_pass_${role.name}", "1234") ?: "1234"
     }
 
     fun verifyPassword(role: UserRole, enteredPass: String): Boolean {
         val saved = getAccountPassword(role)
         return enteredPass.trim() == saved.trim()
-    }
-
-    /**
-     * Login mandiri dengan username dan password (tanpa pilih peran via radio button).
-     * Mencari kecocokan username/peran dan password secara otomatis.
-     */
-    fun loginWithCredentials(
-        usernameInput: String,
-        passwordInput: String,
-        newPasswordInput: String? = null
-    ): Pair<Boolean, String> {
-        val cleanUser = usernameInput.trim().lowercase()
-        val cleanPass = passwordInput.trim()
-
-        if (cleanUser.isBlank()) {
-            return Pair(false, "Username tidak boleh kosong!")
-        }
-        if (cleanPass.isBlank()) {
-            return Pair(false, "Password tidak boleh kosong!")
-        }
-
-        // Resolusi peran berdasarkan username atau kata kunci
-        val targetRole = when {
-            cleanUser.contains("it") || cleanUser.contains("admin") || cleanUser.contains("dev") || cleanUser.contains("support") -> UserRole.IT_SUPPORT
-            cleanUser.contains("owner") || cleanUser.contains("pemilik") || cleanUser.contains("bos") -> UserRole.PEMILIK
-            cleanUser.contains("manajer") || cleanUser.contains("manager") || cleanUser.contains("keuangan") -> UserRole.MANAGER_KEUANGAN
-            cleanUser.contains("kasir") || cleanUser.contains("operator") -> UserRole.KASIR
-            else -> {
-                // Cari kecocokan dengan nama akun tersimpan
-                val matched = UserRole.values().firstOrNull { role ->
-                    getAccountName(role).trim().equals(cleanUser, ignoreCase = true)
-                }
-                matched ?: UserRole.KASIR
-            }
-        }
-
-        return switchUserRoleWithAuth(targetRole, usernameInput.trim(), cleanPass, newPasswordInput)
     }
 
     fun switchUserRoleWithAuth(
@@ -324,20 +275,21 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Turns maintenance mode on or off for every device, gated behind the Tim IT
-     * password. Pemilik (owner) dibatasi agar tidak bisa mengubah maintenance mode.
+     * Turns maintenance mode on or off for every device, gated behind the Team IT
+     * (UserRole.PEMILIK) password only. This is the single dedicated technical account -
+     * the Kasir and Pemilik Usaha (Owner) accounts intentionally cannot authorize this.
      */
     fun setMaintenanceMode(
         enabled: Boolean,
         message: String,
         itPassword: String
     ): Pair<Boolean, String> {
-        if (!verifyPassword(UserRole.IT_SUPPORT, itPassword)) {
-            return Pair(false, "Password Tim IT salah! Akses maintenance dibatasi khusus Tim IT.")
+        if (!verifyPassword(UserRole.PEMILIK, itPassword)) {
+            return Pair(false, "Password Team IT salah!")
         }
 
         val finalMessage = message.trim().ifBlank {
-            "Sistem sedang dalam maintenance oleh Tim IT. Silakan tunggu beberapa saat."
+            "Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti."
         }
 
         // Optimistic local update so the toggling device reacts instantly, even before the
@@ -350,43 +302,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
         return Pair(
             true,
-            if (enabled) "Mode maintenance diaktifkan oleh Tim IT untuk semua perangkat" else "Mode maintenance berhasil dinonaktifkan oleh Tim IT"
+            if (enabled) "Mode maintenance diaktifkan untuk semua perangkat" else "Mode maintenance dinonaktifkan"
         )
-    }
-
-    /**
-     * Pushes a broadcast notification to all devices across the enterprise,
-     * triggered exclusively by IT Support.
-     */
-    fun pushBroadcastNotification(
-        title: String,
-        message: String,
-        onComplete: (Boolean, String) -> Unit = { _, _ -> }
-    ) {
-        val cleanTitle = title.trim().ifBlank { "Pemberitahuan IT Support" }
-        val cleanMessage = message.trim().ifBlank { "Tes Push Notifikasi ke seluruh perangkat berhasil!" }
-        val sender = _currentUser.value.name
-
-        // Trigger on current device immediately with chime sound
-        NotificationHelper.showNotification(
-            context = getApplication(),
-            title = cleanTitle,
-            message = cleanMessage
-        )
-        NotificationHelper.playChime(getApplication())
-
-        viewModelScope.launch(Dispatchers.IO) {
-            val result = firestoreRepository.sendBroadcastNotification(
-                title = cleanTitle,
-                message = cleanMessage,
-                senderName = sender
-            )
-            if (result.isSuccess) {
-                onComplete(true, "Notifikasi berhasil dipush ke semua perangkat!")
-            } else {
-                onComplete(false, "Gagal push ke cloud: ${result.exceptionOrNull()?.message ?: "Periksa koneksi"}")
-            }
-        }
     }
 
     init {
@@ -406,29 +323,6 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     // Ignore: if maintenance status can't be fetched, default to unlocked (false)
                 }
             }
-
-            // Listen for push broadcast notifications from Tim IT Support sent to all devices
-            viewModelScope.launch(Dispatchers.IO) {
-                try {
-                    firestoreRepository.listenBroadcastNotification().collect { broadcast ->
-                        if (broadcast != null && broadcast.id.isNotBlank()) {
-                            // Only trigger notification if this is a newly arrived broadcast
-                            if (broadcast.id != lastReceivedBroadcastId) {
-                                lastReceivedBroadcastId = broadcast.id
-                                // Trigger push notification and chime on this device
-                                NotificationHelper.showNotification(
-                                    context = getApplication(),
-                                    title = broadcast.title.ifBlank { "Pemberitahuan IT Support" },
-                                    message = broadcast.message
-                                )
-                                NotificationHelper.playChime(getApplication())
-                            }
-                        }
-                    }
-                } catch (_: Exception) {
-                    // Best-effort push notification
-                }
-            }
         }
 
         // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
@@ -438,18 +332,11 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 // difference between "not synced to cloud yet" (keep it) and
                 // "was in the cloud before, now gone -> deleted on another device" (remove it).
                 var previousRemoteTimestamps: Set<Long>? = null
-                // The very first snapshot after (re)subscribing is a catch-up sync, not a stream
-                // of brand-new transactions -- this fires whenever the app restarts, reconnects,
-                // OR when the local database was wiped (e.g. by a schema migration). Without this
-                // guard, every historical transaction still sitting in the cloud would look "new"
-                // to this device and re-trigger its notification all at once.
-                var isFirstSnapshot = true
                 try {
                     firestoreRepository.listenTransactions().collect { remoteRecords ->
                         val remoteTimestamps = remoteRecords.map { it.timestamp }.toSet()
                         val local = repository.getAllRecords().first()
                         val localTimestamps = local.map { it.timestamp }.toSet()
-                        val shouldNotify = !isFirstSnapshot
 
                         // Add records that exist in the cloud but not yet locally.
                         var newlyAdded = 0
@@ -457,14 +344,8 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                             if (remote.timestamp !in localTimestamps) {
                                 repository.insertRecord(remote)
                                 newlyAdded++
-                                // Only notify for transactions that genuinely arrive after this
-                                // device is already caught up -- not for the initial catch-up sync.
-                                if (shouldNotify) {
-                                    NotificationHelper.notifyNewTransaction(getApplication(), remote)
-                                }
                             }
                         }
-                        isFirstSnapshot = false
 
                         // Remove local records that used to exist in the cloud but have since
                         // been deleted from another device. We only do this once we have a
@@ -525,12 +406,9 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Listen for worker/petugas changes made on other devices, so adding or removing
-            // a petugas on one phone reflects on every other phone within seconds.
+            // Listen for petugas (worker) list changes from any device: adding or deleting a
+            // petugas on one phone reflects on every other phone automatically.
             viewModelScope.launch(Dispatchers.IO) {
-                // Tracks the set of worker names we last saw in the cloud, same idea as
-                // previousRemoteTimestamps above: lets us tell "not uploaded yet" apart from
-                // "deleted on another device".
                 var previousRemoteNames: Set<String>? = null
                 try {
                     firestoreRepository.listenWorkers().collect { remoteWorkers ->
@@ -538,32 +416,22 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                         val local = repository.getActiveWorkers().first()
                         val localNames = local.map { it.name }.toSet()
 
-                        if (previousRemoteNames == null && remoteWorkers.isEmpty() && local.isNotEmpty()) {
-                            // First snapshot and cloud has nothing yet: this device already has
-                            // petugas locally (e.g. the built-in defaults), so push them up
-                            // instead of treating the empty cloud as "delete everything".
-                            firestoreRepository.batchUploadLocalWorkers(local)
-                        } else {
-                            // Add workers that exist in the cloud but not yet locally.
-                            for (remote in remoteWorkers) {
-                                if (remote.name !in localNames) {
-                                    repository.insertWorker(Worker(name = remote.name, isActive = remote.isActive))
-                                }
+                        // Add petugas that exist in the cloud but not yet on this phone.
+                        for (remote in remoteWorkers) {
+                            if (remote.name !in localNames) {
+                                repository.insertWorker(remote)
                             }
+                        }
 
-                            // Remove local workers that used to exist in the cloud but have
-                            // since been deleted from another device.
-                            val knownBefore = previousRemoteNames
-                            if (knownBefore != null) {
-                                val removedFromCloud = knownBefore - remoteNames
-                                if (removedFromCloud.isNotEmpty()) {
-                                    val toDelete = local.filter { it.name in removedFromCloud }
-                                    for (worker in toDelete) {
-                                        repository.deleteWorker(worker)
-                                        if (_selectedQuickWasher.value == worker.name) {
-                                            _selectedQuickWasher.value = ""
-                                        }
-                                    }
+                        // Remove petugas locally that used to be in the cloud but were deleted
+                        // from another phone, once we have a previous snapshot to compare to.
+                        val knownBefore = previousRemoteNames
+                        if (knownBefore != null) {
+                            val removedFromCloud = knownBefore - remoteNames
+                            if (removedFromCloud.isNotEmpty()) {
+                                val toDelete = local.filter { it.name in removedFromCloud }
+                                for (w in toDelete) {
+                                    repository.deleteWorker(w)
                                 }
                             }
                         }
@@ -1451,10 +1319,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
         viewModelScope.launch {
             val finalId = if (id == 0L) {
-                val newId = repository.insertRecord(record)
-                // Trigger notifikasi transaksi baru
-                NotificationHelper.notifyNewTransaction(getApplication(), record.copy(id = newId))
-                newId
+                repository.insertRecord(record)
             } else {
                 repository.updateRecord(record)
                 id
@@ -1564,7 +1429,10 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         val worker = Worker(name = name.trim())
         viewModelScope.launch {
             repository.insertWorker(worker)
-            firestoreRepository.saveWorker(worker)
+            // Push to Firestore so the new petugas shows up on every other phone too.
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.saveWorker(worker)
+            }
         }
     }
 
@@ -1574,7 +1442,10 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
             if (_selectedQuickWasher.value == worker.name) {
                 _selectedQuickWasher.value = ""
             }
-            firestoreRepository.deleteWorker(worker.name)
+            // Remove from Firestore so the deletion also reflects on every other phone.
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.deleteWorkerRemote(worker.name)
+            }
         }
     }
 
