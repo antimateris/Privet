@@ -1,7 +1,10 @@
 package com.example.ui.dialogs
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,19 +22,20 @@ import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ErrorOutline
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -41,6 +45,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -49,25 +54,22 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.CurrentUser
+import com.example.ui.UserRole
 
-/**
- * Dialog Login Mandiri:
- * Pengguna memasukkan username dan password secara mandiri.
- * Tidak ada radio button atau opsi memilih peran secara gamblang,
- * sehingga akun IT dan hak akses lainnya terlindungi dan tersembunyi.
- */
 @Composable
 fun SwitchUserDialog(
     currentUser: CurrentUser,
+    getAccountName: (UserRole) -> String,
     onDismiss: () -> Unit,
-    onLogin: (username: String, passwordEntered: String, newPassword: String?) -> Pair<Boolean, String>
+    onConfirm: (targetRole: UserRole, name: String, passwordEntered: String, newPassword: String?) -> Pair<Boolean, String>
 ) {
-    var usernameInput by remember { mutableStateOf(currentUser.name) }
-    var passwordInput by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf(currentUser.role) }
+    var userName by remember(selectedRole) { mutableStateOf(getAccountName(selectedRole)) }
+    var passwordInput by remember(selectedRole) { mutableStateOf("") }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    var isChangingPassword by remember { mutableStateOf(false) }
-    var newPasswordInput by remember { mutableStateOf("") }
+    var isChangingPassword by remember(selectedRole) { mutableStateOf(false) }
+    var newPasswordInput by remember(selectedRole) { mutableStateOf("") }
     var newPasswordVisible by remember { mutableStateOf(false) }
 
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -89,7 +91,7 @@ fun SwitchUserDialog(
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "Login & Autentikasi",
+                        text = "Masuk & Ganti Akun",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.Bold
                     )
@@ -104,27 +106,20 @@ fun SwitchUserDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Info user aktif saat ini
+                // Info banner
                 Surface(
                     color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Info,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
                         Text(
-                            text = "Sesi Aktif: ${currentUser.name} (${currentUser.role.title})",
+                            text = "Akun Aktif: ${currentUser.name} (${currentUser.role.title})",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.primary,
@@ -134,42 +129,107 @@ fun SwitchUserDialog(
                 }
 
                 Text(
-                    text = "Silakan masukkan username dan password akun Anda secara mandiri untuk masuk:",
+                    text = "Pilih peran & masukkan password untuk berganti akun:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                // Input Username Mandiri
+                // Role Options
+                val roles = listOf(
+                    Triple(
+                        UserRole.KASIR,
+                        "Kasir / Operator Cuci",
+                        "Input transaksi & cetak struk thermal kasir"
+                    ),
+                    Triple(
+                        UserRole.MANAGER_KEUANGAN,
+                        "Pemilik Usaha (Owner)",
+                        "Akses penuh omset, bagi hasil, tabungan & laporan"
+                    ),
+                    Triple(
+                        UserRole.PEMILIK,
+                        "Team IT",
+                        "Verifikasi, validasi, & sanggah transaksi (24 jam)"
+                    )
+                )
+
+                roles.forEach { (role, label, desc) ->
+                    val isSelected = selectedRole == role
+                    Card(
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                            else MaterialTheme.colorScheme.surface
+                        ),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                selectedRole = role
+                                errorMessage = null
+                            }
+                            .testTag("role_option_${role.name}")
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = {
+                                    selectedRole = role
+                                    errorMessage = null
+                                }
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = label,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 13.sp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = desc,
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(2.dp))
+
+                // Username Akun
                 OutlinedTextField(
-                    value = usernameInput,
+                    value = userName,
                     onValueChange = {
-                        usernameInput = it
+                        userName = it
                         errorMessage = null
                     },
-                    label = { Text("Username / Nama Akun") },
-                    placeholder = { Text("Ketik username akun Anda") },
-                    leadingIcon = {
-                        Icon(
-                            imageVector = Icons.Default.Person,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    },
+                    label = { Text("Username") },
+                    placeholder = { Text("Contoh: Kasir Utama, Pak Hendra") },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("input_user_name"),
                     singleLine = true
                 )
 
-                // Input Password Akun
+                // Password Akun
                 OutlinedTextField(
                     value = passwordInput,
                     onValueChange = {
                         passwordInput = it
                         errorMessage = null
                     },
-                    label = { Text("Password Akun") },
-                    placeholder = { Text("Masukkan password akun") },
+                    label = { Text("Password") },
+                    placeholder = { Text("Masukkan password (Default: 1234)") },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     trailingIcon = {
@@ -187,13 +247,16 @@ fun SwitchUserDialog(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     },
+                    supportingText = {
+                        Text("Password awal default untuk semua akun: 1234", fontSize = 10.sp)
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .testTag("input_user_password"),
                     singleLine = true
                 )
 
-                // Checkbox Ubah Password
+                // Checkbox: Ganti Password
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -206,7 +269,7 @@ fun SwitchUserDialog(
                     )
                     Spacer(modifier = Modifier.width(4.dp))
                     Text(
-                        text = "Ubah password akun setelah berhasil login",
+                        text = "Ubah Password untuk akun ini",
                         style = MaterialTheme.typography.bodySmall,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium
@@ -239,7 +302,7 @@ fun SwitchUserDialog(
                     )
                 }
 
-                // Banner Pesan Kesalahan
+                // Error message banner
                 errorMessage?.let { error ->
                     Surface(
                         color = MaterialTheme.colorScheme.errorContainer,
@@ -271,16 +334,12 @@ fun SwitchUserDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (usernameInput.isBlank()) {
-                        errorMessage = "Harap masukkan username akun Anda!"
-                        return@Button
-                    }
                     if (passwordInput.isBlank()) {
-                        errorMessage = "Harap masukkan password akun Anda!"
+                        errorMessage = "Harap masukkan password akun (Default awal: 1234)!"
                         return@Button
                     }
                     val finalNewPass = if (isChangingPassword) newPasswordInput else null
-                    val (success, message) = onLogin(usernameInput, passwordInput, finalNewPass)
+                    val (success, message) = onConfirm(selectedRole, userName, passwordInput, finalNewPass)
                     if (!success) {
                         errorMessage = message
                     }
@@ -295,7 +354,7 @@ fun SwitchUserDialog(
                     modifier = Modifier.size(16.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
-                Text("Login & Masuk", fontWeight = FontWeight.Bold)
+                Text("Masuk / Ganti Akun", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
