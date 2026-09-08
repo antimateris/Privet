@@ -46,8 +46,8 @@ import androidx.compose.ui.unit.sp
 import com.example.data.repository.MaintenanceStatusData
 
 /**
- * Full-screen blocker shown on every device while maintenance mode is active. Includes an
- * unlock for Tim IT Support to disable maintenance mode.
+ * Full-screen blocker shown on every device while maintenance mode is active. Includes a
+ * discreet Team IT-only unlock so the Team IT account can turn it back off without needing another device.
  */
 @Composable
 fun MaintenanceLockScreen(
@@ -112,7 +112,7 @@ fun MaintenanceLockScreen(
             if (!showUnlockForm) {
                 TextButton(
                     onClick = { showUnlockForm = true },
-                    modifier = Modifier.testTag("btn_show_it_unlock")
+                    modifier = Modifier.testTag("btn_show_owner_unlock")
                 ) {
                     Icon(
                         imageVector = Icons.Default.Lock,
@@ -120,7 +120,7 @@ fun MaintenanceLockScreen(
                         modifier = Modifier.size(14.dp)
                     )
                     Spacer(modifier = Modifier.width(6.dp))
-                    Text("Buka Kunci Tim IT", fontSize = 12.sp)
+                    Text("Masuk sebagai Team IT", fontSize = 12.sp)
                 }
             } else {
                 Column(
@@ -133,7 +133,7 @@ fun MaintenanceLockScreen(
                             passwordInput = it
                             errorMessage = null
                         },
-                        label = { Text("Password Tim IT") },
+                        label = { Text("Password Team IT") },
                         visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                         trailingIcon = {
