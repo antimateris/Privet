@@ -23,7 +23,9 @@ import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.NotificationsActive
+import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
@@ -74,7 +76,8 @@ fun ItControlCenterDialog(
     onDismiss: () -> Unit,
     onSetMaintenance: (enabled: Boolean, message: String, itPassword: String) -> Pair<Boolean, String>,
     onPushBroadcast: (title: String, message: String, onComplete: (Boolean, String) -> Unit) -> Unit,
-    onUpdateCompanyProfile: (companyName: String, divisionName: String, address: String, phone: String) -> Unit
+    onUpdateCompanyProfile: (companyName: String, divisionName: String, address: String, phone: String) -> Unit,
+    onOpenAppUpdateCenter: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
 
@@ -270,6 +273,57 @@ fun ItControlCenterDialog(
                                 text = if (maintenanceEnabled) "Kunci & Aktifkan Maintenance" else "Buka Kunci (Set Normal)",
                                 fontWeight = FontWeight.Bold
                             )
+                        }
+                    }
+                }
+
+                // Section: In-App Update Center (Push APK Baru ke Semua Pengguna)
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.RocketLaunch,
+                                contentDescription = null,
+                                tint = Color(0xFF0284C7),
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Pusat Pembaruan Aplikasi (OTA Update)",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        Text(
+                            text = "Rilis APK versi baru dari akun IT, atur changelog, dan kirimkan notifikasi pembaruan ke seluruh ponsel pengguna.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Button(
+                            onClick = {
+                                onDismiss()
+                                onOpenAppUpdateCenter?.invoke()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Buka Pusat Pembaruan Aplikasi", fontWeight = FontWeight.Bold)
                         }
                     }
                 }

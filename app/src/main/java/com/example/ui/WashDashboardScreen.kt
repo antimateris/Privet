@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.compose.animation.Crossfade
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -46,11 +47,13 @@ import androidx.compose.material.icons.filled.Payments
 import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Print
 import androidx.compose.material.icons.filled.ReceiptLong
+import androidx.compose.material.icons.filled.RocketLaunch
 import androidx.compose.material.icons.filled.Savings
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material.icons.filled.Today
 import androidx.compose.material.icons.filled.Warning
@@ -115,6 +118,7 @@ import com.example.ui.components.WasherBreakdownCard
 import com.example.ui.dialogs.ActiveUsersDialog
 import com.example.ui.dialogs.AddEditExpenseDialog
 import com.example.ui.dialogs.AddEditWashDialog
+import com.example.ui.dialogs.AppUpdateCenterDialog
 import com.example.ui.dialogs.CalendarRevenueDialog
 import com.example.ui.dialogs.DisputeTransactionDialog
 import com.example.ui.dialogs.EditDreamGoalDialog
@@ -163,6 +167,10 @@ fun WashDashboardScreen(
     val allExpenses by viewModel.allExpenses.collectAsStateWithLifecycle()
     val todayExpensesTotal by viewModel.todayExpensesTotal.collectAsStateWithLifecycle()
     val currentMonthExpensesTotal by viewModel.currentMonthExpensesTotal.collectAsStateWithLifecycle()
+    val appUpdateInfo by viewModel.appUpdateInfo.collectAsStateWithLifecycle()
+
+    val currentVersionCode = com.example.BuildConfig.VERSION_CODE.toLong()
+    val hasNewUpdate = appUpdateInfo.hasNewVersion(currentVersionCode)
 
     var currentTab by remember { mutableStateOf(0) }
     var showAddEditDialog by remember { mutableStateOf(false) }
@@ -172,6 +180,7 @@ fun WashDashboardScreen(
     var recordToDelete by remember { mutableStateOf<WashRecord?>(null) }
     var showMenu by remember { mutableStateOf(false) }
     var showMaintenanceDialog by remember { mutableStateOf(false) }
+    var showAppUpdateDialog by remember { mutableStateOf(false) }
     var showEditDreamGoalDialog by remember { mutableStateOf(false) }
     var showCalendarDialog by remember { mutableStateOf(false) }
     var showEditPastRevenueDialog by remember { mutableStateOf(false) }
@@ -237,6 +246,28 @@ fun WashDashboardScreen(
                 },
                 actions = {
                     val onlineUsersCount = activeUsers.count { it.isOnlineNow() }
+
+                    // In-App Update Center Button (Highlights when an update is available)
+                    IconButton(
+                        onClick = { showAppUpdateDialog = true },
+                        modifier = Modifier.testTag("appbar_update_center_button")
+                    ) {
+                        BadgedBox(
+                            badge = {
+                                if (hasNewUpdate) {
+                                    Badge(containerColor = Color(0xFFFF3B30)) {
+                                        Text("BARU", fontSize = 8.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = "Pusat Pembaruan Aplikasi",
+                                tint = if (hasNewUpdate) Color(0xFFFF9500) else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
 
                     // Active Users Status Dialog Button with Live Online Badge
                     IconButton(
@@ -361,6 +392,41 @@ fun WashDashboardScreen(
                                 showActiveUsersDialog = true
                             },
                             modifier = Modifier.testTag("menu_active_users")
+                        )
+
+                        DropdownMenuItem(
+                            text = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Pusat Pembaruan Aplikasi")
+                                    if (hasNewUpdate) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color(0xFFFF3B30)
+                                        ) {
+                                            Text(
+                                                text = "BARU",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    Icons.Default.SystemUpdate,
+                                    contentDescription = null,
+                                    tint = if (hasNewUpdate) Color(0xFFFF9500) else MaterialTheme.colorScheme.primary
+                                )
+                            },
+                            onClick = {
+                                showMenu = false
+                                showAppUpdateDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_app_update_center")
                         )
 
                         DropdownMenuItem(
@@ -613,6 +679,90 @@ fun WashDashboardScreen(
                                         fontSize = 11.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = bannerText
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Section: In-App Update Alert Card (If a newer version exists)
+                if (hasNewUpdate) {
+                    item {
+                        Surface(
+                            color = Color(0xFFE8F2FF),
+                            shape = RoundedCornerShape(14.dp),
+                            border = BorderStroke(1.dp, Color(0xFF007AFF).copy(alpha = 0.5f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { showAppUpdateDialog = true }
+                                .testTag("in_app_update_banner")
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(38.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .background(Color(0xFF007AFF)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.RocketLaunch,
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Column {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Pembaruan v${appUpdateInfo.latestVersionName} Siap!",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = Color(0xFF004085)
+                                            )
+                                            if (appUpdateInfo.isForceUpdate) {
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Surface(
+                                                    shape = RoundedCornerShape(4.dp),
+                                                    color = Color(0xFFFF3B30)
+                                                ) {
+                                                    Text(
+                                                        text = "Wajib",
+                                                        fontSize = 9.sp,
+                                                        color = Color.White,
+                                                        fontWeight = FontWeight.Bold,
+                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+                                        Text(
+                                            text = "Dirilis oleh ${appUpdateInfo.releasedBy} • Ketuk untuk unduh APK langsung",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF1E3A8A)
+                                        )
+                                    }
+                                }
+                                Surface(
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = Color(0xFF007AFF)
+                                ) {
+                                    Text(
+                                        text = "Unduh",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White,
+                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
                                     )
                                 }
                             }
@@ -1647,6 +1797,23 @@ fun WashDashboardScreen(
             activeUsers = activeUsers,
             onRefresh = { viewModel.refreshActiveUsers() },
             onDismiss = { showActiveUsersDialog = false }
+        )
+    }
+
+    // Dialog: Pusat Pembaruan Aplikasi (OTA In-App Update)
+    if (showAppUpdateDialog) {
+        AppUpdateCenterDialog(
+            currentVersionName = com.example.BuildConfig.VERSION_NAME,
+            currentVersionCode = currentVersionCode,
+            updateInfo = appUpdateInfo,
+            isItAccount = currentUser.role == UserRole.PEMILIK,
+            onDismiss = { showAppUpdateDialog = false },
+            onDownloadApk = { url ->
+                viewModel.downloadUpdateApk(context, url)
+            },
+            onPushNewVersion = { vCode, vName, url, notes, force, size, itPass, onComplete ->
+                viewModel.pushNewAppVersion(vCode, vName, url, notes, force, size, itPass, onComplete)
+            }
         )
     }
 

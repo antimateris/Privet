@@ -2,6 +2,7 @@ package com.example.data.repository
 
 import android.content.Context
 import android.util.Log
+import com.example.data.model.AppUpdateInfo
 import com.example.data.model.StoreExpense
 import com.example.data.model.UserPresence
 import com.example.data.model.WashRecord
@@ -67,6 +68,7 @@ class FirestoreWashRepository(
         private const val COLLECTION_ACTIVE_USERS = "active_users"
         private const val DOC_ACCOUNTS = "account_credentials"
         private const val DOC_APP_STATUS = "app_status"
+        private const val DOC_APP_UPDATE = "app_update"
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
@@ -161,6 +163,13 @@ class FirestoreWashRepository(
             ?.document(branchId)
             ?.collection(COLLECTION_SETTINGS)
             ?.document(DOC_APP_STATUS)
+
+    private fun getAppUpdateDoc(branchId: String = DEFAULT_BRANCH) =
+        getFirestore()
+            ?.collection(COLLECTION_BRANCHES)
+            ?.document(branchId)
+            ?.collection(COLLECTION_SETTINGS)
+            ?.document(DOC_APP_UPDATE)
 
     /**
      * Checks if Firestore is ready and available in the current environment.
@@ -554,6 +563,70 @@ class FirestoreWashRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set maintenance status", e)
+            Result.failure(e)
+        }
+    }
+
+    // --- In-App Updates & OTA Releases (Controlled exclusively by Team IT) ---
+
+    /**
+     * Listens in real-time for new app version updates pushed by Team IT.
+     */
+    fun listenAppUpdate(branchId: String = DEFAULT_BRANCH): Flow<AppUpdateInfo> {
+        val doc = getAppUpdateDoc(branchId) ?: return flowOf(AppUpdateInfo())
+
+        return callbackFlow {
+            val listenerRegistration = doc.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.e(TAG, "Listen app update failed", error)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val info = AppUpdateInfo(
+                        latestVersionCode = snapshot.getLong("latestVersionCode") ?: 2L,
+                        latestVersionName = snapshot.getString("latestVersionName") ?: "1.1.0",
+                        downloadUrl = snapshot.getString("downloadUrl") ?: "",
+                        releaseNotes = snapshot.getString("releaseNotes") ?: "",
+                        isForceUpdate = snapshot.getBoolean("isForceUpdate") ?: false,
+                        releasedBy = snapshot.getString("releasedBy") ?: "Team IT",
+                        releaseTimestamp = snapshot.getLong("releaseTimestamp") ?: 0L,
+                        fileSizeMb = snapshot.getString("fileSizeMb") ?: ""
+                    )
+                    trySend(info)
+                } else {
+                    trySend(AppUpdateInfo())
+                }
+            }
+            awaitClose { listenerRegistration.remove() }
+        }
+    }
+
+    /**
+     * Publishes a new app update metadata to Firestore. Must be called after Team IT authentication.
+     */
+    suspend fun publishAppUpdate(
+        updateInfo: AppUpdateInfo,
+        branchId: String = DEFAULT_BRANCH
+    ): Result<Unit> {
+        val doc = getAppUpdateDoc(branchId)
+            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
+
+        return try {
+            val data = hashMapOf(
+                "latestVersionCode" to updateInfo.latestVersionCode,
+                "latestVersionName" to updateInfo.latestVersionName,
+                "downloadUrl" to updateInfo.downloadUrl,
+                "releaseNotes" to updateInfo.releaseNotes,
+                "isForceUpdate" to updateInfo.isForceUpdate,
+                "releasedBy" to updateInfo.releasedBy,
+                "releaseTimestamp" to if (updateInfo.releaseTimestamp > 0) updateInfo.releaseTimestamp else System.currentTimeMillis(),
+                "fileSizeMb" to updateInfo.fileSizeMb
+            )
+            doc.set(data).awaitTask()
+            Log.d(TAG, "App update published: ${updateInfo.latestVersionName} (code ${updateInfo.latestVersionCode})")
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to publish app update", e)
             Result.failure(e)
         }
     }

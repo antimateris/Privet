@@ -2,10 +2,15 @@ package com.example.ui
 
 import android.app.Application
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.BuildConfig
 import com.example.data.local.AppDatabase
+import com.example.data.model.AppUpdateInfo
 import com.example.data.model.StoreExpense
 import com.example.data.model.UserPresence
 import com.example.data.model.WashRecord
@@ -204,6 +209,11 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _activeUsers = MutableStateFlow<List<UserPresence>>(emptyList())
     val activeUsers: StateFlow<List<UserPresence>> = _activeUsers.asStateFlow()
+
+    private val _appUpdateInfo = MutableStateFlow(AppUpdateInfo())
+    val appUpdateInfo: StateFlow<AppUpdateInfo> = _appUpdateInfo.asStateFlow()
+
+    private val notifiedUpdateVersionCodes = mutableSetOf<Long>()
 
     fun getLastLoginTime(role: UserRole): Long {
         return userPrefs.getLong("last_login_${role.name}", userPrefs.getLong("last_login_time", System.currentTimeMillis()))
@@ -409,6 +419,83 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /**
+     * Publishes a new version release to Firestore.
+     * STRICT REQUIREMENT: Only the Team IT (UserRole.PEMILIK) password can authorize this action.
+     */
+    fun pushNewAppVersion(
+        versionCode: Long,
+        versionName: String,
+        downloadUrl: String,
+        releaseNotes: String,
+        isForceUpdate: Boolean,
+        fileSizeMb: String,
+        itPassword: String,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (!verifyPassword(UserRole.PEMILIK, itPassword)) {
+            onComplete(false, "Password Team IT salah! Hanya akun Team IT yang berhak merilis pembaruan.")
+            return
+        }
+        if (downloadUrl.isBlank()) {
+            onComplete(false, "URL link unduh file APK wajib diisi!")
+            return
+        }
+        val currentCode = BuildConfig.VERSION_CODE.toLong()
+        if (versionCode <= currentCode) {
+            onComplete(false, "Kode versi rilis baru ($versionCode) harus lebih besar dari versi saat ini ($currentCode)!")
+            return
+        }
+
+        val updateInfo = AppUpdateInfo(
+            latestVersionCode = versionCode,
+            latestVersionName = versionName.trim().ifBlank { "v$versionCode" },
+            downloadUrl = downloadUrl.trim(),
+            releaseNotes = releaseNotes.trim(),
+            isForceUpdate = isForceUpdate,
+            releasedBy = _currentUser.value.name.ifBlank { "Team IT" },
+            releaseTimestamp = System.currentTimeMillis(),
+            fileSizeMb = fileSizeMb.trim()
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = firestoreRepository.publishAppUpdate(updateInfo)
+            result.onSuccess {
+                _appUpdateInfo.value = updateInfo
+                // Broadcast push notification to all devices so everyone is alerted immediately
+                try {
+                    firestoreRepository.sendBroadcastPush(
+                        title = "🚀 Pembaruan Aplikasi ${updateInfo.latestVersionName} Tersedia!",
+                        message = "Versi baru telah dirilis oleh ${updateInfo.releasedBy}. Buka aplikasi untuk download langsung.",
+                        senderName = updateInfo.releasedBy
+                    )
+                } catch (_: Exception) {
+                }
+                onComplete(true, "Pembaruan versi ${updateInfo.latestVersionName} berhasil dipush ke semua pengguna!")
+            }.onFailure { err ->
+                onComplete(false, "Gagal merilis pembaruan: ${err.message}")
+            }
+        }
+    }
+
+    /**
+     * Launches the system browser or download manager to download the APK file from downloadUrl.
+     */
+    fun downloadUpdateApk(context: Context, url: String) {
+        if (url.isBlank()) return
+        try {
+            val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                "https://$url"
+            } else url
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e("WashViewModel", "Failed to open update download URL", e)
+        }
+    }
+
     init {
         val database = AppDatabase.getDatabase(application)
         repository = WashRepository(database.washDao(), database.expenseDao())
@@ -512,6 +599,29 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 } catch (_: Exception) {
                     // Ignore: if maintenance status can't be fetched, default to unlocked (false)
+                }
+            }
+        }
+
+        // Listen for new app updates published by Team IT
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenAppUpdate().collect { update ->
+                        _appUpdateInfo.value = update
+                        val currentCode = BuildConfig.VERSION_CODE.toLong()
+                        if (update.hasNewVersion(currentCode)) {
+                            if (notifiedUpdateVersionCodes.add(update.latestVersionCode)) {
+                                NotificationHelper.showNotification(
+                                    getApplication(),
+                                    "🚀 Pembaruan Aplikasi ${update.latestVersionName} Tersedia!",
+                                    "Pembaruan baru telah dirilis oleh ${update.releasedBy}.\nKetuk untuk download dan pasang pembaruan!"
+                                )
+                                NotificationHelper.playChime(getApplication())
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
                 }
             }
         }
