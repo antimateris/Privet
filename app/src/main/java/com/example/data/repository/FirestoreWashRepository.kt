@@ -36,17 +36,6 @@ data class MaintenanceStatusData(
 )
 
 /**
- * Broadcast notification payload sent by IT Support to all connected devices.
- */
-data class AppBroadcastNotification(
-    val id: String = "",
-    val title: String = "",
-    val message: String = "",
-    val senderName: String = "Tim IT Support",
-    val timestamp: Long = 0L
-)
-
-/**
  * Repository class for Firebase Firestore handling real-time synchronization
  * of motor wash transactions for PT. LION STEAM MOTOR.
  */
@@ -59,11 +48,10 @@ class FirestoreWashRepository(
         const val DEFAULT_BRANCH = "lion_steam_pusat"
         private const val COLLECTION_BRANCHES = "branches"
         private const val COLLECTION_TRANSACTIONS = "transactions"
-        private const val COLLECTION_WORKERS = "workers"
         private const val COLLECTION_SETTINGS = "settings"
+        private const val COLLECTION_WORKERS = "workers"
         private const val DOC_ACCOUNTS = "account_credentials"
         private const val DOC_APP_STATUS = "app_status"
-        private const val DOC_BROADCAST = "broadcast_notification"
         private const val OFFLINE_MESSAGE = "Mode lokal aktif: Data tersimpan aman di HP"
     }
 
@@ -121,6 +109,18 @@ class FirestoreWashRepository(
             ?.document(branchId)
             ?.collection(COLLECTION_WORKERS)
 
+    /**
+     * Turns a petugas/worker name into a stable, safe Firestore document ID so the same
+     * worker maps to the same document no matter which phone added them (local Room IDs
+     * differ per device, so the name is used as the shared cross-device key instead).
+     */
+    private fun workerDocId(name: String): String {
+        val slug = name.trim().lowercase()
+            .replace(Regex("\\s+"), "_")
+            .replace(Regex("[^a-z0-9_]"), "")
+        return if (slug.isBlank()) "worker_${name.hashCode()}" else slug
+    }
+
     private fun getAccountSettingsDoc(branchId: String = DEFAULT_BRANCH) =
         getFirestore()
             ?.collection(COLLECTION_BRANCHES)
@@ -134,13 +134,6 @@ class FirestoreWashRepository(
             ?.document(branchId)
             ?.collection(COLLECTION_SETTINGS)
             ?.document(DOC_APP_STATUS)
-
-    private fun getBroadcastDoc(branchId: String = DEFAULT_BRANCH) =
-        getFirestore()
-            ?.collection(COLLECTION_BRANCHES)
-            ?.document(branchId)
-            ?.collection(COLLECTION_SETTINGS)
-            ?.document(DOC_BROADCAST)
 
     /**
      * Checks if Firestore is ready and available in the current environment.
@@ -372,11 +365,11 @@ class FirestoreWashRepository(
         }
     }
 
-    // --- Worker (Petugas) Sync (shared across devices, keyed by worker name) ---
+    // --- Workers / Petugas Sync (shared list of petugas across all devices) ---
 
     /**
-     * Listens in real-time to the shared list of workers/petugas, so that adding or removing
-     * a worker on one device reflects on every other device connected to this branch.
+     * Listens in real-time to the shared petugas/worker list, so adding or deleting a
+     * petugas on one phone reflects on every other connected phone within seconds.
      */
     fun listenWorkers(branchId: String = DEFAULT_BRANCH): Flow<List<Worker>> {
         val collection = getWorkersCollection(branchId)
@@ -389,112 +382,57 @@ class FirestoreWashRepository(
                         Log.e(TAG, "Listen workers failed", error)
                         return@addSnapshotListener
                     }
-
                     if (snapshot != null) {
                         val workers = snapshot.documents.mapNotNull { doc ->
-                            try {
-                                val name = doc.getString("name") ?: doc.id
-                                val isActive = doc.getBoolean("isActive") ?: true
-                                Worker(name = name, isActive = isActive)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error parsing worker doc ${doc.id}", e)
-                                null
-                            }
+                            val name = doc.getString("name") ?: return@mapNotNull null
+                            Worker(
+                                name = name,
+                                isActive = doc.getBoolean("isActive") ?: true
+                            )
                         }
                         trySend(workers)
                     }
                 }
-
-            awaitClose {
-                listenerRegistration.remove()
-            }
+            awaitClose { listenerRegistration.remove() }
         }
     }
 
     /**
-     * Saves (adds or updates) a worker/petugas in Firestore. The worker's (trimmed) name is
-     * used as the deterministic document ID so devices never end up with duplicate petugas.
+     * Adds/updates a petugas in the shared cloud list so it appears on all other phones.
      */
-    suspend fun saveWorker(
-        worker: Worker,
-        branchId: String = DEFAULT_BRANCH
-    ): Result<Unit> {
+    suspend fun saveWorker(worker: Worker, branchId: String = DEFAULT_BRANCH): Result<Unit> {
         val collection = getWorkersCollection(branchId)
             ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
-        val docId = worker.name.trim()
-        if (docId.isBlank()) return Result.failure(IllegalArgumentException("Nama petugas kosong"))
-
         return try {
+            val docRef = collection.document(workerDocId(worker.name))
             val data = hashMapOf(
-                "name" to docId,
+                "name" to worker.name,
                 "isActive" to worker.isActive,
                 "updatedAt" to System.currentTimeMillis()
             )
-            collection.document(docId).set(data).awaitTask()
-            Log.d(TAG, "Worker '$docId' synced to Firestore")
+            docRef.set(data).awaitTask()
+            Log.d(TAG, "Worker synced to Firestore: ${worker.name}")
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to sync worker '$docId'", e)
+            Log.e(TAG, "Failed to sync worker", e)
             Result.failure(e)
         }
     }
 
     /**
-     * Deletes a worker/petugas from Firestore by name, so the removal reflects on all devices.
+     * Removes a petugas from the shared cloud list so it disappears on all other phones too.
      */
-    suspend fun deleteWorker(
-        name: String,
-        branchId: String = DEFAULT_BRANCH
-    ): Result<Unit> {
+    suspend fun deleteWorkerRemote(name: String, branchId: String = DEFAULT_BRANCH): Result<Unit> {
         val collection = getWorkersCollection(branchId)
             ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
 
-        val docId = name.trim()
         return try {
-            collection.document(docId).delete().awaitTask()
-            Log.d(TAG, "Worker '$docId' deleted from Firestore")
+            collection.document(workerDocId(name)).delete().awaitTask()
+            Log.d(TAG, "Worker removed from Firestore: $name")
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to delete worker '$docId' from Firestore", e)
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Synchronizes a batch of local Room workers to Firestore (e.g. initial upload or migration
-     * for branches that had petugas added before cloud sync existed).
-     */
-    suspend fun batchUploadLocalWorkers(
-        workers: List<Worker>,
-        branchId: String = DEFAULT_BRANCH
-    ): Result<Int> {
-        val firestore = getFirestore()
-            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
-
-        val collection = getWorkersCollection(branchId)
-            ?: return Result.failure(IllegalStateException("Collection tidak ditemukan"))
-
-        return try {
-            val batch = firestore.batch()
-            for (worker in workers) {
-                val docId = worker.name.trim()
-                if (docId.isBlank()) continue
-                val docRef = collection.document(docId)
-                batch.set(
-                    docRef,
-                    hashMapOf(
-                        "name" to docId,
-                        "isActive" to worker.isActive,
-                        "updatedAt" to System.currentTimeMillis()
-                    )
-                )
-            }
-            batch.commit().awaitTask()
-            Log.d(TAG, "Batch synced ${workers.size} workers to Firestore")
-            Result.success(workers.size)
-        } catch (e: Exception) {
-            Log.e(TAG, "Batch worker sync failed", e)
+            Log.e(TAG, "Failed to delete worker remotely", e)
             Result.failure(e)
         }
     }
@@ -589,66 +527,6 @@ class FirestoreWashRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to set maintenance status", e)
-            Result.failure(e)
-        }
-    }
-
-    // --- Push Broadcast Notification (sent by IT Support to all connected devices) ---
-
-    /**
-     * Listens in real-time to broadcast notifications pushed to all devices.
-     */
-    fun listenBroadcastNotification(branchId: String = DEFAULT_BRANCH): Flow<AppBroadcastNotification?> {
-        val doc = getBroadcastDoc(branchId) ?: return flowOf(null)
-
-        return callbackFlow {
-            val listenerRegistration = doc.addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.e(TAG, "Listen broadcast notification failed", error)
-                    return@addSnapshotListener
-                }
-                if (snapshot == null || !snapshot.exists()) {
-                    trySend(null)
-                    return@addSnapshotListener
-                }
-                val notif = AppBroadcastNotification(
-                    id = snapshot.getString("id") ?: "",
-                    title = snapshot.getString("title") ?: "",
-                    message = snapshot.getString("message") ?: "",
-                    senderName = snapshot.getString("senderName") ?: "Tim IT Support",
-                    timestamp = snapshot.getLong("timestamp") ?: 0L
-                )
-                trySend(notif)
-            }
-            awaitClose { listenerRegistration.remove() }
-        }
-    }
-
-    /**
-     * Sends a broadcast notification to all devices sharing this branch.
-     */
-    suspend fun sendBroadcastNotification(
-        title: String,
-        message: String,
-        senderName: String = "Tim IT Support",
-        branchId: String = DEFAULT_BRANCH
-    ): Result<Unit> {
-        val doc = getBroadcastDoc(branchId)
-            ?: return Result.failure(IllegalStateException(OFFLINE_MESSAGE))
-
-        return try {
-            val data = hashMapOf(
-                "id" to System.currentTimeMillis().toString(),
-                "title" to title,
-                "message" to message,
-                "senderName" to senderName,
-                "timestamp" to System.currentTimeMillis()
-            )
-            doc.set(data).awaitTask()
-            Log.d(TAG, "Broadcast notification sent: $title")
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to send broadcast notification", e)
             Result.failure(e)
         }
     }
