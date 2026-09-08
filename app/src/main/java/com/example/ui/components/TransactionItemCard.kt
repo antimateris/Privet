@@ -398,8 +398,9 @@ fun TransactionItemCard(
                 }
             }
 
-            // Manager Keuangan dispute & validation controls
-            if (currentUser.role == UserRole.MANAGER_KEUANGAN || currentUser.role == UserRole.PEMILIK) {
+            // Dispute & validation controls: available to any non-Kasir role
+            // (Manajer Keuangan, Pemilik Usaha, Team IT)
+            if (currentUser.role != UserRole.KASIR) {
                 HorizontalDivider(
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
