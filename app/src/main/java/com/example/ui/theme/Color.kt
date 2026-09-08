@@ -3,56 +3,74 @@ package com.example.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // ============================================================================
-// "Steam & Shine" palette — grounded in the subject: a motorcycle wash & cash
-// register app. Petrol-teal (water, steam, trust) pairs with citrus lime
-// (freshly-cleaned shine, positive/active states) instead of a generic
-// blue-on-slate SaaS look. Neutrals carry a faint warm-teal tint rather than
-// cold grey-blue, so the whole palette reads as one deliberate family.
+// iOS 18 "Cupertino Modern" Theme Palette
+// Inspired by the latest Apple iPhone iOS design language:
+// Signature vibrant iOS system tints, soft grouped background (#F2F2F7),
+// clean white squircle surfaces with subtle borders, and high-contrast typography.
 // ============================================================================
 
-// --- Neutrals (warm paper background, teal-tinted ink) ---
-val PaperBackground = Color(0xFFFAF8F3)     // Warm soft paper, easy on the eyes, not stark white
-val CardSurface = Color(0xFFFFFFFF)         // Crisp white cards popping against the warm paper
-val SubtleSurfaceVariant = Color(0xFFF0EEE6) // Warm neutral tint for chips & inner containers
+// --- iOS Neutrals (Light: Grouped Background & Elevated Card Surfaces) ---
+val AppleGroupedBackground = Color(0xFFF2F2F7)    // iOS 18 System Grouped Background
+val PaperBackground = AppleGroupedBackground
+val AppleCardSurface = Color(0xFFFFFFFF)          // Crisp white iOS card surface
+val CardSurface = AppleCardSurface
+val AppleSubtleFill = Color(0xFFE5E5EA)           // iOS secondary fill for chips & inner containers
+val SubtleSurfaceVariant = AppleSubtleFill
 
-val InkOnSurface = Color(0xFF162321)        // Deep teal-black — cohesive with the primary hue
-val MutedOnVariant = Color(0xFF5B6B67)      // Muted teal-grey for captions & subtitles
-val SoftBorderOutline = Color(0xFFE6E1D6)   // Warm hairline border for cards
-val SoftDivider = Color(0xFFEFEBE1)
+val AppleLabel = Color(0xFF1C1C1E)                // iOS primary label
+val InkOnSurface = AppleLabel
+val AppleSecondaryLabel = Color(0xFF8E8E93)       // iOS secondary label
+val MutedOnVariant = AppleSecondaryLabel
+val AppleHairlineBorder = Color(0xFFE5E5EA)       // iOS delicate hairline separator
+val SoftBorderOutline = AppleHairlineBorder
+val SoftDivider = Color(0xFFE5E5EA)
 
-// --- Brand: Petrol (primary) ---
-val PetrolPrimary = Color(0xFF0E4F4A)
-val PetrolPrimaryContainer = Color(0xFFD3EDE7)
-val OnPetrolPrimaryContainer = Color(0xFF07332F)
+// --- Apple iOS System Accents ---
+// iOS System Blue (Signature Apple Primary Accent)
+val AppleSystemBlue = Color(0xFF007AFF)
+val PetrolPrimary = AppleSystemBlue
+val PetrolPrimaryContainer = Color(0xFFE8F2FF)
+val OnPetrolPrimaryContainer = Color(0xFF004085)
 
-// --- Brand: Citrus Lime (secondary — shine, positive/active energy) ---
-val CitrusSecondary = Color(0xFF5C8A02)
-val CitrusSecondaryContainer = Color(0xFFE3F5C4)
-val OnCitrusSecondaryContainer = Color(0xFF2F4A00)
+// iOS System Cyan / Mint (Fresh Steam & Clean Motorcycles)
+val AppleSystemCyan = Color(0xFF00C7BE)
+val CitrusSecondary = AppleSystemCyan
+val CitrusSecondaryContainer = Color(0xFFE0F9F8)
+val OnCitrusSecondaryContainer = Color(0xFF004D4A)
 
-// --- Brand: Amber (tertiary — money, bagi hasil) ---
-val AmberTertiary = Color(0xFFB4590A)
-val AmberTertiaryContainer = Color(0xFFFEF0DB)
-val OnAmberTertiaryContainer = Color(0xFF7A3B00)
+// iOS System Orange / Amber (Finances & Bagi Hasil)
+val AppleSystemOrange = Color(0xFFFF9500)
+val AmberTertiary = AppleSystemOrange
+val AmberTertiaryContainer = Color(0xFFFFF4E5)
+val OnAmberTertiaryContainer = Color(0xFF804B00)
 
-// --- Status colors ---
-val SuccessGreen = Color(0xFF3F7D20)
-val SuccessGreenContainer = Color(0xFFE3F5C4)
-val OnSuccessGreen = Color(0xFF1F3D0F)
+// --- iOS System Status Colors ---
+val AppleSystemGreen = Color(0xFF34C759)
+val SuccessGreen = AppleSystemGreen
+val SuccessGreenContainer = Color(0xFFE8F8ED)
+val OnSuccessGreen = Color(0xFF1B6B32)
 
-val MoneyBlue = PetrolPrimary
+val MoneyBlue = AppleSystemBlue
 val MoneyBlueContainer = PetrolPrimaryContainer
 
-val AmberShare = AmberTertiary
+val AmberShare = AppleSystemOrange
 val AmberShareContainer = AmberTertiaryContainer
 
-val ErrorRed = Color(0xFFBA1B1B)
-val ErrorRedContainer = Color(0xFFFFDAD4)
+val AppleSystemRed = Color(0xFFFF3B30)
+val ErrorRed = AppleSystemRed
+val ErrorRedContainer = Color(0xFFFFEBEA)
 
-// --- Dark theme variants (kept in step with the light identity) ---
-val PetrolPrimaryDark = Color(0xFF8BD3C8)
-val CitrusSecondaryDark = Color(0xFFC1E88B)
-val AmberTertiaryDark = Color(0xFFFFB77C)
-val DarkBackground = Color(0xFF0E1513)
-val DarkSurface = Color(0xFF162321)
-val DarkSurfaceVariant = Color(0xFF2A3634)
+// --- iOS 18 Dark Theme / OLED System Colors ---
+val AppleDarkOledBackground = Color(0xFF000000)     // iOS pure OLED Black
+val AppleDarkCardSurface = Color(0xFF1C1C1E)        // iOS secondary grouped background
+val AppleDarkSurfaceVariant = Color(0xFF2C2C2E)     // iOS tertiary system fill
+val AppleDarkBlue = Color(0xFF0A84FF)               // iOS 18 Dark Blue
+val AppleDarkCyan = Color(0xFF64D2FF)               // iOS 18 Dark Cyan
+val AppleDarkOrange = Color(0xFFFF9F0A)             // iOS 18 Dark Orange
+
+val PetrolPrimaryDark = AppleDarkBlue
+val CitrusSecondaryDark = AppleDarkCyan
+val AmberTertiaryDark = AppleDarkOrange
+val DarkBackground = AppleDarkOledBackground
+val DarkSurface = AppleDarkCardSurface
+val DarkSurfaceVariant = AppleDarkSurfaceVariant

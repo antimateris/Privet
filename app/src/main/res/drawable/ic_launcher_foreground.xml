@@ -1,50 +1,8 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <!-- Steam / Water Spray curves -->
-    <path
-        android:fillColor="#E0F7FA"
-        android:pathData="M32,32c-3,0 -6,3 -6,6c0,2 1,4 3,5c-2,1 -3,3 -3,5c0,3 3,6 6,6c1,0 2,-0.3 3,-0.8c1,2.8 4,4.8 7,4.8c4,0 7,-3 7,-7c0,-1 -0.2,-2 -0.6,-3c2,-1 3.6,-3 3.6,-5c0,-4 -3.5,-7 -7,-7c-1,0 -2,0.3 -3,0.8c-1,-2.8 -4,-4.8 -7,-4.8z" />
-    <!-- Clean Motorcycle Vector -->
-    <!-- Rear Wheel -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round"
-        android:pathData="M38,72m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M38,72m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <!-- Front Wheel -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round"
-        android:pathData="M74,72m-10,0a10,10 0,1 1,20 0a10,10 0,1 1,-20 0" />
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M74,72m-3,0a3,3 0,1 1,6 0a3,3 0,1 1,-6 0" />
-    <!-- Frame & Body -->
-    <path
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="3.5"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:pathData="M38,72 L50,56 L64,56 L74,72 M50,56 L55,44 L70,44 M64,56 L70,44 L68,39" />
-    <!-- Seat & Tank -->
-    <path
-        android:fillColor="#FFFFFF"
-        android:pathData="M44,52h14c2,0 3,1 3,3l-1,3h-18l-1,-3c0,-1.5 1.5,-3 3,-3z" />
-    <!-- Water drops / sparkles -->
-    <path
-        android:fillColor="#80D8FF"
-        android:pathData="M77,34m-2.5,0a2.5,2.5 0,1 1,5 0a2.5,2.5 0,1 1,-5 0" />
-    <path
-        android:fillColor="#80D8FF"
-        android:pathData="M84,42m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
-    <path
-        android:fillColor="#FFD54F"
-        android:pathData="M52,32l1,2 2,1 -2,1 -1,2 -1,-2 -2,-1 2,-1z" />
-</vector>
+<?xml version="1.0" encoding="utf-8"?>
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:width="72dp"
+        android:height="72dp"
+        android:drawable="@drawable/ic_ios_app_icon"
+        android:gravity="center" />
+</layer-list>
