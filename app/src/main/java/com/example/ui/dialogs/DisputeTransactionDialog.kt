@@ -78,7 +78,7 @@ fun DisputeTransactionDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
-                    text = "Sebagai Manager Keuangan, Anda dapat menyanggah transaksi jika terdapat ketidaksesuaian data. Jika dalam 24 jam tidak ada sanggahan, sistem akan otomatis mengesahkan data sebagai valid.",
+                    text = "Sebagai akun yang berwenang (Pemilik Usaha / Team IT), Anda dapat menyanggah transaksi jika terdapat ketidaksesuaian data. Jika dalam 24 jam tidak ada sanggahan, sistem akan otomatis mengesahkan data sebagai valid.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
