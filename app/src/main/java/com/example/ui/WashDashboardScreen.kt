@@ -368,8 +368,9 @@ fun WashDashboardScreen(
                             contentDescription = "Ganti Akun",
                             tint = when (currentUser.role) {
                                 UserRole.KASIR -> Color(0xFF0284C7)
-                                UserRole.MANAGER_KEUANGAN -> Color(0xFFD97706)
-                                UserRole.PEMILIK -> Color(0xFF16A34A)
+                                UserRole.MANAJER_KEUANGAN -> Color(0xFF7C3AED)
+                                UserRole.PEMILIK_USAHA -> Color(0xFFD97706)
+                                UserRole.TEAM_IT -> Color(0xFF16A34A)
                             }
                         )
                     }
@@ -775,16 +776,18 @@ fun WashDashboardScreen(
                     Surface(
                         color = when (currentUser.role) {
                             UserRole.KASIR -> Color(0xFFF0F9FF)
-                            UserRole.MANAGER_KEUANGAN -> Color(0xFFFFFBEB)
-                            UserRole.PEMILIK -> Color(0xFFF0FDF4)
+                            UserRole.MANAJER_KEUANGAN -> Color(0xFFF5F3FF)
+                            UserRole.PEMILIK_USAHA -> Color(0xFFFFFBEB)
+                            UserRole.TEAM_IT -> Color(0xFFF0FDF4)
                         },
                         shape = RoundedCornerShape(12.dp),
                         border = BorderStroke(
                             1.dp,
                             when (currentUser.role) {
                                 UserRole.KASIR -> Color(0xFFBAE6FD)
-                                UserRole.MANAGER_KEUANGAN -> Color(0xFFFDE68A)
-                                UserRole.PEMILIK -> Color(0xFFBBF7D0)
+                                UserRole.MANAJER_KEUANGAN -> Color(0xFFDDD6FE)
+                                UserRole.PEMILIK_USAHA -> Color(0xFFFDE68A)
+                                UserRole.TEAM_IT -> Color(0xFFBBF7D0)
                             }
                         ),
                         modifier = Modifier
@@ -807,8 +810,9 @@ fun WashDashboardScreen(
                                     contentDescription = null,
                                     tint = when (currentUser.role) {
                                         UserRole.KASIR -> Color(0xFF0284C7)
-                                        UserRole.MANAGER_KEUANGAN -> Color(0xFFD97706)
-                                        UserRole.PEMILIK -> Color(0xFF16A34A)
+                                        UserRole.MANAJER_KEUANGAN -> Color(0xFF7C3AED)
+                                        UserRole.PEMILIK_USAHA -> Color(0xFFD97706)
+                                        UserRole.TEAM_IT -> Color(0xFF16A34A)
                                     },
                                     modifier = Modifier.size(22.dp)
                                 )
@@ -1761,14 +1765,13 @@ fun WashDashboardScreen(
         )
     }
 
-    // Dialog: Ganti Akun Pengguna (Kasir / Manager / Pemilik)
+    // Dialog: Login / Ganti Akun (Kasir / Manajer Keuangan / Pemilik Usaha / Team IT)
     if (showSwitchUserDialog) {
         SwitchUserDialog(
             currentUser = currentUser,
-            getAccountName = { role -> viewModel.getAccountName(role) },
             onDismiss = { showSwitchUserDialog = false },
-            onConfirm = { targetRole, name, password, newPassword ->
-                val result = viewModel.switchUserRoleWithAuth(targetRole, name, password, newPassword)
+            onConfirm = { username, password, newPassword ->
+                val result = viewModel.loginWithCredentials(username, password, newPassword)
                 if (result.first) {
                     showSwitchUserDialog = false
                     coroutineScope.launch {
@@ -1806,7 +1809,7 @@ fun WashDashboardScreen(
             currentVersionName = com.example.BuildConfig.VERSION_NAME,
             currentVersionCode = currentVersionCode,
             updateInfo = appUpdateInfo,
-            isItAccount = currentUser.role == UserRole.PEMILIK,
+            isItAccount = currentUser.role == UserRole.TEAM_IT,
             onDismiss = { showAppUpdateDialog = false },
             onDownloadApk = { url ->
                 viewModel.downloadUpdateApk(context, url)
