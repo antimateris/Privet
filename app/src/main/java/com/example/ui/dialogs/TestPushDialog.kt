@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -99,13 +100,21 @@ fun TestPushDialog(
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "Notifikasi ini akan dikirimkan secara real-time ke semua HP/tablet yang terpasang aplikasi Steam Motor ini (Pengirim: $senderName).",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(10.dp)
-                    )
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "Notifikasi ini akan dikirimkan secara real-time ke semua HP/tablet yang terpasang aplikasi Steam Motor ini (Pengirim: $senderName).",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "💡 Tips HP Xiaomi/Oppo/Vivo: Agar notif tetap berbunyi saat aplikasi ditutup, pastikan izin 'Mulai Otomatis' (Autostart) aktif & penghemat baterai disetel ke 'Tidak Ada Batasan'.",
+                            fontSize = 10.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
 
                 // Quick Templates

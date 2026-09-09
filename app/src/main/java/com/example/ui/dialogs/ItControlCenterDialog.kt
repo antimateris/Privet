@@ -355,9 +355,15 @@ fun ItControlCenterDialog(
                         }
 
                         Text(
-                            text = "Notifikasi ini akan ditembakkan ke SEMUA HP yang login (Kasir, Manager, Owner, IT lain) secara real-time, bukan cuma ke perangkat ini.",
+                            text = "Notifikasi ini akan ditembakkan ke SEMUA HP yang login (Kasir, Manager, Owner, IT lain) secara real-time melalui sistem Firebase Messaging.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(
+                            text = "💡 Tips Latar Belakang: Agar notifikasi masuk saat aplikasi ditutup di HP Xiaomi/MIUI, aktifkan 'Autostart' & set Battery Saver ke 'No Restrictions'.",
+                            fontSize = 10.5.sp,
+                            color = Color(0xFFD97706),
+                            fontWeight = FontWeight.Medium
                         )
 
                         OutlinedTextField(

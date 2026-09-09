@@ -2,14 +2,18 @@ package com.example
 
 import android.app.Application
 import android.util.Log
+import com.example.util.NotificationHelper
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
+import com.google.firebase.messaging.FirebaseMessaging
 
 class SteamMotorApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        NotificationHelper.initChannel(this)
         initializeFirebase()
+        setupFirebaseMessaging()
     }
 
     private fun initializeFirebase() {
@@ -29,6 +33,21 @@ class SteamMotorApp : Application() {
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to initialize Firebase: ${e.message}", e)
+        }
+    }
+
+    private fun setupFirebaseMessaging() {
+        try {
+            FirebaseMessaging.getInstance().subscribeToTopic("all_devices")
+                .addOnCompleteListener { task ->
+                    if (task.isSuccessful) {
+                        Log.i(TAG, "Subscribed to FCM topic: all_devices")
+                    } else {
+                        Log.w(TAG, "Failed to subscribe to FCM topic", task.exception)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "Error initializing FCM: ${e.message}")
         }
     }
 
