@@ -41,50 +41,134 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-// -- trimmed rest of the file above for brevity; we only modify the section near firestoreRepository --
+data class WashFinancialSummary(
+    val totalMotors: Int = 0,
+    val totalGrossRevenue: Long = 0L,
+    val totalWasherShare: Long = 0L,
+    val totalOwnerShare: Long = 0L,
+    val disputedMotors: Int = 0,
+    val disputedAmount: Long = 0L
+)
 
-package com.example.ui
+data class WasherShareBreakdown(
+    val washerName: String,
+    val motorCount: Int,
+    val totalShare: Long
+)
 
-import android.app.Application
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
-import android.util.Log
-import androidx.lifecycle.AndroidViewModel
-import androidx.lifecycle.viewModelScope
-import com.example.BuildConfig
-import com.example.data.local.AppDatabase
-import com.example.data.model.AppUpdateInfo
-import com.example.data.model.StoreExpense
-import com.example.data.model.UserPresence
-import com.example.data.model.WashRecord
-import com.example.data.model.Worker
-import com.example.data.repository.FirestoreWashRepository
-import com.example.data.repository.MaintenanceStatusData
-import com.example.data.repository.WashRepository
-import com.example.util.CorporateReportGenerator
-import com.example.util.FormatUtils
-import com.example.util.NotificationHelper
-import com.example.util.TimePeriod
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
-import kotlin.math.ceil
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
+enum class UserRole(val title: String, val subtitle: String) {
+    KASIR("Kasir (Operator)", "Input motor cuci & cetak struk"),
+    MANAJER_KEUANGAN("Manajer Keuangan", "Akses keuangan, laporan laba & bagi hasil"),
+    PEMILIK_USAHA("Pemilik Usaha (Owner)", "Akses penuh usaha, tabungan & aset bisnis"),
+    TEAM_IT("Team IT", "Verifikasi teknis, rilis update & kelola mode maintenance");
+
+    companion object {
+        // Aliases for backward compatibility
+        val MANAGER_KEUANGAN: UserRole get() = MANAJER_KEUANGAN
+        val PEMILIK: UserRole get() = PEMILIK_USAHA
+    }
+}
+
+data class CurrentUser(
+    val name: String = "Kasir Utama",
+    val role: UserRole = UserRole.KASIR
+)
+
+enum class SavingsTargetFor(val label: String, val desc: String) {
+    PEMILIK("Untuk Pemilik Usaha", "Tabungan pengadaan inventaris/alat steam (kompresor, renovasi)"),
+    KARYAWAN("Untuk Karyawan / Pencuci", "Tabungan bersama / bonus kesejahteraan karyawan dari omset cuci")
+}
+
+enum class SavingsSource(val label: String, val shortDesc: String) {
+    TOTAL_REVENUE("Total Omset Harian", "Disisihkan dari seluruh omset kotor cuci"),
+    OWNER_SHARE("Kas Bersih Pemilik", "Disisihkan dari laba bersih pemilik (50%)"),
+    WASHER_SHARE("Porsi Bagi Hasil Karyawan", "Disisihkan dari tabungan/jatah pencuci")
+}
+
+data class DreamGoalConfig(
+    val itemName: String = "Kompresor Steam Matrix 2 HP",
+    val targetAmount: Long = 2_200_000L,
+    val initialSavings: Long = 0L,
+    val savingSource: SavingsSource = SavingsSource.TOTAL_REVENUE,
+    val targetFor: SavingsTargetFor = SavingsTargetFor.PEMILIK,
+    val dailyTargetAmount: Long = 100_000L
+)
+
+data class DreamGoalProgress(
+    val config: DreamGoalConfig,
+    val todayGrossRevenue: Long,
+    val todayOwnerShare: Long,
+    val todayRevenue: Long,
+    val totalAccumulatedRevenue: Long,
+    val totalSaved: Long,
+    val remainingAmount: Long,
+    val progressPercent: Float,
+    val todayContributionPercent: Float,
+    val todayDailyTargetPercent: Float,
+    val isAchieved: Boolean,
+    val estimatedDaysRemaining: Int,
+    val averageDailyRevenue: Long
+)
+
+data class DayRevenueSummary(
+    val dateMillis: Long,
+    val motorCount: Int,
+    val totalRevenue: Long,
+    val totalOwnerShare: Long
+)
+
+data class MonthlyDayRecord(
+    val dayOfMonth: Int,
+    val dateMillis: Long,
+    val dateKey: String,
+    val dayName: String,
+    val motorCount: Int,
+    val grossRevenue: Long,
+    val washerShare: Long,
+    val ownerShare: Long,
+    val topWasherName: String = ""
+)
+
+data class MonthlyWasherStat(
+    val washerName: String,
+    val motorCount: Int,
+    val totalShare: Long,
+    val percentage: Float
+)
+
+data class MonthlySummaryData(
+    val year: Int,
+    val month: Int,
+    val monthName: String,
+    val totalMotors: Int,
+    val totalGrossRevenue: Long,
+    val totalWasherShare: Long,
+    val totalOwnerShare: Long,
+    val activeDaysCount: Int,
+    val daysInMonth: Int,
+    val averageDailyMotors: Float,
+    val averageDailyGross: Long,
+    val averageDailyOwnerShare: Long,
+    val peakDay: MonthlyDayRecord?,
+    val dailyBreakdown: List<MonthlyDayRecord>,
+    val washerStats: List<MonthlyWasherStat>,
+    val cashAmount: Long,
+    val qrisAmount: Long,
+    val transferAmount: Long,
+    val totalExpenses: Long = 0L,
+    val netProfitAfterExpenses: Long = 0L
+)
+
+data class CompanyProfile(
+    val companyName: String = "PT. LION STEAM MOTOR",
+    val divisionName: String = "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
+    val companyAddress: String = "Kawasan Sentra Bisnis Otomotif Terpadu",
+    val companyPhone: String = "0812-3456-7890",
+    val legalRegNo: String = "AHU-0038912.AH.01.01 / NIB: 9120003482190",
+    val directorName: String = "Bpk. Mohamad Ricky, S.H. (Direktur Utama)",
+    val financeManagerName: String = "Muhamad Agung Kurniawan (Manajer Keuangan)",
+    val cashierName: String = "Admin / Kasir Operasional"
+)
 
 class WashViewModel(application: Application) : AndroidViewModel(application) {
     private val repository: WashRepository
@@ -111,9 +195,6 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         FirestoreWashRepository(context = getApplication<Application>())
     }
 
-    // Temporary cache to support undoing deletions (timestamp -> record)
-    private val recentlyDeletedRecords = mutableMapOf<Long, WashRecord>()
-
     private val _cloudSyncStatus = MutableStateFlow("Data tersimpan di HP (Offline)")
     val cloudSyncStatus: StateFlow<String> = _cloudSyncStatus.asStateFlow()
 
@@ -124,14 +205,782 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         getApplication<Application>().getSharedPreferences("user_profile_prefs", Context.MODE_PRIVATE)
     }
 
-    init {
-        // Must run before anything else reads "user_role" / "account_name_*" /
-        // "account_pass_*" so people updating from the old 3-role version don't
-        // get bumped back to Kasir or lose their saved passwords.
-        migrateLegacyRoleKeys()
+    val deviceId: String by lazy {
+        var id = userPrefs.getString("device_unique_id", null)
+        if (id.isNullOrBlank()) {
+            id = "dev_" + java.util.UUID.randomUUID().toString().take(8)
+            userPrefs.edit().putString("device_unique_id", id).apply()
+        }
+        id
     }
 
-    // ... rest of the original file unchanged ...
+    private val _activeUsers = MutableStateFlow<List<UserPresence>>(emptyList())
+    val activeUsers: StateFlow<List<UserPresence>> = _activeUsers.asStateFlow()
+
+    private val _appUpdateInfo = MutableStateFlow(AppUpdateInfo())
+    val appUpdateInfo: StateFlow<AppUpdateInfo> = _appUpdateInfo.asStateFlow()
+
+    private val notifiedUpdateVersionCodes = mutableSetOf<Long>()
+
+    fun getLastLoginTime(role: UserRole): Long {
+        return userPrefs.getLong("last_login_${role.name}", userPrefs.getLong("last_login_time", System.currentTimeMillis()))
+    }
+
+    fun recordUserActivity(isLogin: Boolean = false) {
+        val user = _currentUser.value
+        val now = System.currentTimeMillis()
+        if (isLogin) {
+            userPrefs.edit()
+                .putLong("last_login_${user.role.name}", now)
+                .putLong("last_login_time", now)
+                .apply()
+        }
+        val lastLogin = getLastLoginTime(user.role)
+        val presence = UserPresence(
+            userId = "${deviceId}_${user.role.name.lowercase()}",
+            userName = user.name,
+            role = user.role.title,
+            lastActiveTime = now,
+            lastLoginTime = lastLogin,
+            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+            isOnline = true
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.updateUserPresence(presence)
+        }
+    }
+
+    fun refreshActiveUsers() {
+        recordUserActivity(isLogin = false)
+    }
+
+    private val notifiedOrderTimestamps = mutableSetOf<Long>()
+    private val notifiedBroadcastPushIds = mutableSetOf<String>()
+    private val appLaunchTime = System.currentTimeMillis()
+
+    fun notifyOrderOnce(record: WashRecord) {
+        if (record.timestamp in notifiedOrderTimestamps) return
+        notifiedOrderTimestamps.add(record.timestamp)
+        val now = System.currentTimeMillis()
+        if (now - record.timestamp < 5 * 60 * 1000L) {
+            NotificationHelper.notifyNewTransaction(getApplication(), record)
+        }
+    }
+
+    fun markOrderAsNotified(timestamp: Long) {
+        notifiedOrderTimestamps.add(timestamp)
+        NotificationHelper.markOrderHandledOrDeleted(timestamp)
+    }
+
+    fun sendTestPushNotification(
+        title: String,
+        message: String,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        val sender = _currentUser.value.name
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                firestoreRepository.sendBroadcastPush(
+                    title = title,
+                    message = message,
+                    senderName = sender
+                )
+                NotificationHelper.showNotification(
+                    getApplication(),
+                    title,
+                    "$message\n(Pengirim: $sender)"
+                )
+                NotificationHelper.playChime(getApplication())
+                onComplete(true, "Push notifikasi berhasil dikirim ke semua orang!")
+            } catch (e: Exception) {
+                onComplete(false, "Gagal mengirim push: ${e.message}")
+            }
+        }
+    }
+
+    private val _currentUser = MutableStateFlow(loadCurrentUser())
+    val currentUser: StateFlow<CurrentUser> = _currentUser.asStateFlow()
+
+    private fun loadCurrentUser(): CurrentUser {
+        val roleStr = userPrefs.getString("user_role", UserRole.KASIR.name) ?: UserRole.KASIR.name
+        val role = try {
+            UserRole.valueOf(roleStr)
+        } catch (_: Exception) {
+            when (roleStr) {
+                "MANAGER_KEUANGAN" -> UserRole.MANAJER_KEUANGAN
+                "PEMILIK" -> UserRole.PEMILIK_USAHA
+                else -> UserRole.KASIR
+            }
+        }
+        val defaultName = when (role) {
+            UserRole.KASIR -> "Kasir Utama"
+            UserRole.MANAJER_KEUANGAN -> "Manajer Keuangan"
+            UserRole.PEMILIK_USAHA -> "Pemilik Usaha"
+            UserRole.TEAM_IT -> "Team IT"
+        }
+        val name = userPrefs.getString("account_name_${role.name}", userPrefs.getString("user_name", defaultName) ?: defaultName) ?: defaultName
+        return CurrentUser(name = name, role = role)
+    }
+
+    fun getAccountName(role: UserRole): String {
+        val defaultName = when (role) {
+            UserRole.KASIR -> "Kasir Utama"
+            UserRole.MANAJER_KEUANGAN -> "Manajer Keuangan"
+            UserRole.PEMILIK_USAHA -> "Pemilik Usaha"
+            UserRole.TEAM_IT -> "Team IT"
+        }
+        return userPrefs.getString("account_name_${role.name}", defaultName) ?: defaultName
+    }
+
+    fun getAccountPassword(role: UserRole): String {
+        return userPrefs.getString("account_pass_${role.name}", "1234") ?: "1234"
+    }
+
+    fun verifyPassword(role: UserRole, enteredPass: String): Boolean {
+        val saved = getAccountPassword(role)
+        return enteredPass.trim() == saved.trim()
+    }
+
+    /**
+     * Resolves role automatically from entered username & password.
+     * Supports the 4 roles without having the user manually choose from a dropdown or radio list.
+     */
+    fun loginWithCredentials(
+        usernameInput: String,
+        passwordInput: String,
+        newPasswordInput: String? = null
+    ): Pair<Boolean, String> {
+        val trimmedUser = usernameInput.trim()
+        val trimmedPass = passwordInput.trim()
+
+        if (trimmedUser.isBlank()) {
+            return Pair(false, "Username tidak boleh kosong!")
+        }
+        if (trimmedPass.isBlank()) {
+            return Pair(false, "Password tidak boleh kosong!")
+        }
+
+        // 1. Direct match by configured username per role
+        var matchedRole: UserRole? = null
+        for (role in UserRole.values()) {
+            val configuredName = getAccountName(role).trim()
+            if (trimmedUser.equals(configuredName, ignoreCase = true)) {
+                matchedRole = role
+                break
+            }
+        }
+
+        // 2. Fuzzy match by keyword if user typed role names directly
+        if (matchedRole == null) {
+            matchedRole = when {
+                trimmedUser.contains("it", ignoreCase = true) ||
+                    trimmedUser.contains("admin", ignoreCase = true) ||
+                    trimmedUser.contains("developer", ignoreCase = true) -> UserRole.TEAM_IT
+                trimmedUser.contains("manajer", ignoreCase = true) ||
+                    trimmedUser.contains("manager", ignoreCase = true) ||
+                    trimmedUser.contains("keuangan", ignoreCase = true) -> UserRole.MANAJER_KEUANGAN
+                trimmedUser.contains("pemilik", ignoreCase = true) ||
+                    trimmedUser.contains("owner", ignoreCase = true) ||
+                    trimmedUser.contains("bos", ignoreCase = true) -> UserRole.PEMILIK_USAHA
+                trimmedUser.contains("kasir", ignoreCase = true) ||
+                    trimmedUser.contains("operator", ignoreCase = true) -> UserRole.KASIR
+                else -> null
+            }
+        }
+
+        // 3. Fallback: Check if password uniquely matches one role
+        if (matchedRole == null) {
+            val matchingRoles = UserRole.values().filter { role ->
+                getAccountPassword(role).trim() == trimmedPass
+            }
+            if (matchingRoles.size == 1) {
+                matchedRole = matchingRoles.first()
+            }
+        }
+
+        if (matchedRole == null) {
+            return Pair(false, "Akun '$trimmedUser' tidak ditemukan. Pastikan username sesuai (Kasir / Manajer Keuangan / Pemilik Usaha / Team IT)")
+        }
+
+        val savedPass = getAccountPassword(matchedRole)
+        if (trimmedPass != savedPass.trim()) {
+            return Pair(false, "Password salah untuk akun ${matchedRole.title}!")
+        }
+
+        val finalName = trimmedUser.ifBlank { getAccountName(matchedRole) }
+        val finalPassword = if (!newPasswordInput.isNullOrBlank()) newPasswordInput.trim() else savedPass
+
+        val now = System.currentTimeMillis()
+        userPrefs.edit()
+            .putString("user_role", matchedRole.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${matchedRole.name}", finalName)
+            .putString("account_pass_${matchedRole.name}", finalPassword)
+            .putLong("last_login_${matchedRole.name}", now)
+            .putLong("last_login_time", now)
+            .apply()
+
+        _currentUser.value = CurrentUser(name = finalName, role = matchedRole)
+        recordUserActivity(isLogin = true)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.saveAccountFields(
+                mapOf(
+                    "${matchedRole.name}_name" to finalName,
+                    "${matchedRole.name}_pass" to finalPassword
+                )
+            )
+        }
+
+        return Pair(true, "Berhasil masuk sebagai $finalName (${matchedRole.title})")
+    }
+
+    fun switchUserRoleWithAuth(
+        targetRole: UserRole,
+        name: String,
+        passwordInput: String,
+        newPasswordInput: String? = null
+    ): Pair<Boolean, String> {
+        val savedPass = getAccountPassword(targetRole)
+        if (passwordInput.trim() != savedPass.trim()) {
+            return Pair(false, "Password salah untuk akun ${targetRole.title}!")
+        }
+
+        val finalName = name.ifBlank { getAccountName(targetRole) }.trim()
+        val finalPassword = if (!newPasswordInput.isNullOrBlank()) newPasswordInput.trim() else savedPass
+
+        val now = System.currentTimeMillis()
+        userPrefs.edit()
+            .putString("user_role", targetRole.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${targetRole.name}", finalName)
+            .putString("account_pass_${targetRole.name}", finalPassword)
+            .putLong("last_login_${targetRole.name}", now)
+            .putLong("last_login_time", now)
+            .apply()
+
+        _currentUser.value = CurrentUser(name = finalName, role = targetRole)
+        recordUserActivity(isLogin = true)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.saveAccountFields(
+                mapOf(
+                    "${targetRole.name}_name" to finalName,
+                    "${targetRole.name}_pass" to finalPassword
+                )
+            )
+        }
+
+        return Pair(true, "Berhasil masuk sebagai $finalName (${targetRole.title})")
+    }
+
+    fun switchUserRole(role: UserRole, name: String) {
+        val finalName = name.trim().ifBlank { getAccountName(role) }
+        val updated = CurrentUser(name = finalName, role = role)
+        _currentUser.value = updated
+        val now = System.currentTimeMillis()
+        userPrefs.edit()
+            .putString("user_role", role.name)
+            .putString("user_name", finalName)
+            .putString("account_name_${role.name}", finalName)
+            .putLong("last_login_${role.name}", now)
+            .putLong("last_login_time", now)
+            .apply()
+
+        recordUserActivity(isLogin = true)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.saveAccountFields(mapOf("${role.name}_name" to finalName))
+        }
+    }
+
+    /**
+     * Turns maintenance mode on or off for every device, gated behind the Team IT
+     * (UserRole.TEAM_IT) password only. This is the single dedicated technical account -
+     * other accounts intentionally cannot authorize this.
+     */
+    fun setMaintenanceMode(
+        enabled: Boolean,
+        message: String,
+        itPassword: String
+    ): Pair<Boolean, String> {
+        if (!verifyPassword(UserRole.TEAM_IT, itPassword)) {
+            return Pair(false, "Password Team IT salah!")
+        }
+
+        val finalMessage = message.trim().ifBlank {
+            "Aplikasi sedang dalam perbaikan. Silakan coba lagi nanti."
+        }
+
+        // Optimistic local update so the toggling device reacts instantly, even before the
+        // Firestore round-trip completes.
+        _maintenanceStatus.value = MaintenanceStatusData(enabled = enabled, message = finalMessage)
+
+        viewModelScope.launch(Dispatchers.IO) {
+            firestoreRepository.setMaintenanceStatus(enabled, finalMessage)
+        }
+
+        return Pair(
+            true,
+            if (enabled) "Mode maintenance diaktifkan untuk semua perangkat" else "Mode maintenance dinonaktifkan"
+        )
+    }
+
+    /**
+     * Publishes a new version release to Firestore.
+     * STRICT REQUIREMENT: Only the Team IT (UserRole.TEAM_IT) password can authorize this action.
+     */
+    fun pushNewAppVersion(
+        versionCode: Long,
+        versionName: String,
+        downloadUrl: String,
+        releaseNotes: String,
+        isForceUpdate: Boolean,
+        fileSizeMb: String,
+        itPassword: String,
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        if (!verifyPassword(UserRole.TEAM_IT, itPassword)) {
+            onComplete(false, "Password Team IT salah! Hanya akun Team IT yang berhak merilis pembaruan.")
+            return
+        }
+        if (downloadUrl.isBlank()) {
+            onComplete(false, "URL link unduh file APK wajib diisi!")
+            return
+        }
+        val currentCode = BuildConfig.VERSION_CODE.toLong()
+        if (versionCode <= currentCode) {
+            onComplete(false, "Kode versi rilis baru ($versionCode) harus lebih besar dari versi saat ini ($currentCode)!")
+            return
+        }
+
+        val updateInfo = AppUpdateInfo(
+            latestVersionCode = versionCode,
+            latestVersionName = versionName.trim().ifBlank { "v$versionCode" },
+            downloadUrl = downloadUrl.trim(),
+            releaseNotes = releaseNotes.trim(),
+            isForceUpdate = isForceUpdate,
+            releasedBy = _currentUser.value.name.ifBlank { "Team IT" },
+            releaseTimestamp = System.currentTimeMillis(),
+            fileSizeMb = fileSizeMb.trim()
+        )
+
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = firestoreRepository.publishAppUpdate(updateInfo)
+            result.onSuccess {
+                _appUpdateInfo.value = updateInfo
+                // Broadcast push notification to all devices so everyone is alerted immediately
+                try {
+                    firestoreRepository.sendBroadcastPush(
+                        title = "🚀 Pembaruan Aplikasi ${updateInfo.latestVersionName} Tersedia!",
+                        message = "Versi baru telah dirilis oleh ${updateInfo.releasedBy}. Buka aplikasi untuk download langsung.",
+                        senderName = updateInfo.releasedBy
+                    )
+                } catch (_: Exception) {
+                }
+                onComplete(true, "Pembaruan versi ${updateInfo.latestVersionName} berhasil dipush ke semua pengguna!")
+            }.onFailure { err ->
+                onComplete(false, "Gagal merilis pembaruan: ${err.message}")
+            }
+        }
+    }
+
+    /**
+     * Launches the system browser or download manager to download the APK file from downloadUrl.
+     */
+    fun downloadUpdateApk(context: Context, url: String) {
+        if (url.isBlank()) return
+        try {
+            val cleanUrl = if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                "https://$url"
+            } else url
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(cleanUrl)).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            context.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e("WashViewModel", "Failed to open update download URL", e)
+        }
+    }
+
+    init {
+        val database = AppDatabase.getDatabase(application)
+        repository = WashRepository(database.washDao(), database.expenseDao())
+
+        // Purge Asep, Budi, Joko from workers permanently
+        viewModelScope.launch(Dispatchers.IO) {
+            val namesToRemove = setOf("asep", "budi", "joko")
+            try {
+                val localWorkers = repository.getActiveWorkers().first()
+                for (w in localWorkers) {
+                    if (w.name.trim().lowercase() in namesToRemove) {
+                        repository.deleteWorker(w)
+                    }
+                }
+                listOf("Asep", "Budi", "Joko").forEach { name ->
+                    firestoreRepository.deleteWorkerRemote(name)
+                }
+            } catch (_: Exception) {
+            }
+        }
+
+        // Register initial login presence
+        recordUserActivity(isLogin = true)
+
+        // Heartbeat active presence every 45s
+        viewModelScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(45_000L)
+                recordUserActivity(isLogin = false)
+            }
+        }
+
+        // Listen for active users in real-time
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenActiveUsers().collect { remoteUsers ->
+                        val combined = remoteUsers.toMutableList()
+                        val user = _currentUser.value
+                        val myPresence = UserPresence(
+                            userId = "${deviceId}_${user.role.name.lowercase()}",
+                            userName = user.name,
+                            role = user.role.title,
+                            lastActiveTime = System.currentTimeMillis(),
+                            lastLoginTime = getLastLoginTime(user.role),
+                            deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+                            isOnline = true
+                        )
+                        val idx = combined.indexOfFirst { it.userId == myPresence.userId }
+                        if (idx >= 0) {
+                            combined[idx] = myPresence
+                        } else {
+                            combined.add(0, myPresence)
+                        }
+                        _activeUsers.value = combined
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        } else {
+            val user = _currentUser.value
+            _activeUsers.value = listOf(
+                UserPresence(
+                    userId = "${deviceId}_${user.role.name.lowercase()}",
+                    userName = user.name,
+                    role = user.role.title,
+                    lastActiveTime = System.currentTimeMillis(),
+                    lastLoginTime = getLastLoginTime(user.role),
+                    deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}".trim(),
+                    isOnline = true
+                )
+            )
+        }
+
+        // Listen for store expenses in real-time
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenExpenses().collect { remoteExpenses ->
+                        val local = repository.getAllExpenses().first()
+                        val localTimestamps = local.map { it.timestamp }.toSet()
+                        for (remote in remoteExpenses) {
+                            if (remote.timestamp !in localTimestamps) {
+                                repository.insertExpense(remote)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        // Listen for maintenance mode changes from any device (works independently of the
+        // transaction sync block below, since it should still lock the app even if other
+        // Firestore features are having trouble).
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenMaintenanceStatus().collect { status ->
+                        _maintenanceStatus.value = status
+                    }
+                } catch (_: Exception) {
+                    // Ignore: if maintenance status can't be fetched, default to unlocked (false)
+                }
+            }
+        }
+
+        // Listen for new app updates published by Team IT
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenAppUpdate().collect { update ->
+                        _appUpdateInfo.value = update
+                        val currentCode = BuildConfig.VERSION_CODE.toLong()
+                        if (update.hasNewVersion(currentCode)) {
+                            if (notifiedUpdateVersionCodes.add(update.latestVersionCode)) {
+                                NotificationHelper.showNotification(
+                                    getApplication(),
+                                    "🚀 Pembaruan Aplikasi ${update.latestVersionName} Tersedia!",
+                                    "Pembaruan baru telah dirilis oleh ${update.releasedBy}.\nKetuk untuk download dan pasang pembaruan!"
+                                )
+                                NotificationHelper.playChime(getApplication())
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+        }
+
+        // Start listening to real-time cloud updates from other devices (e.g. Kasir / Owner)
+        if (firestoreRepository.isAvailable()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                // Tracks the set of timestamps we last saw in the cloud, so we can tell the
+                // difference between "not synced to cloud yet" (keep it) and
+                // "was in the cloud before, now gone -> deleted on another device" (remove it).
+                var previousRemoteTimestamps: Set<Long>? = null
+                try {
+                    firestoreRepository.listenTransactions().collect { remoteRecords ->
+                        val remoteTimestamps = remoteRecords.map { it.timestamp }.toSet()
+                        val local = repository.getAllRecords().first()
+                        val localTimestamps = local.map { it.timestamp }.toSet()
+
+                        // Add records that exist in the cloud but not yet locally.
+                        var newlyAdded = 0
+                        for (remote in remoteRecords) {
+                            if (remote.timestamp !in localTimestamps) {
+                                repository.insertRecord(remote)
+                                newlyAdded++
+                                notifyOrderOnce(remote)
+                            }
+                        }
+
+                        // Remove local records that used to exist in the cloud but have since
+                        // been deleted from another device. We only do this once we have a
+                        // previous snapshot to compare against, so brand-new local records that
+                        // simply haven't finished uploading yet are never mistakenly deleted.
+                        var removedLocally = 0
+                        val knownBefore = previousRemoteTimestamps
+                        if (knownBefore != null) {
+                            val removedFromCloud = knownBefore - remoteTimestamps
+                            if (removedFromCloud.isNotEmpty()) {
+                                val toDelete = local.filter { it.timestamp in removedFromCloud }
+                                for (rec in toDelete) {
+                                    markOrderAsNotified(rec.timestamp)
+                                    repository.deleteRecord(rec)
+                                    removedLocally++
+                                }
+                            }
+                        }
+                        previousRemoteTimestamps = remoteTimestamps
+
+                        _cloudSyncStatus.value = if (remoteRecords.isNotEmpty() || removedLocally > 0) {
+                            "Real-time aktif • ${remoteRecords.size} transaksi di cloud"
+                        } else {
+                            "Real-time aktif • Belum ada transaksi di cloud"
+                        }
+                    }
+                } catch (_: Exception) {
+                    _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                }
+            }
+
+            // Listen for account name/password changes made on other devices (Kasir/Manager/Owner)
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenAccountSettings().collect { fields ->
+                        if (fields == null) return@collect
+                        val editor = userPrefs.edit()
+                        var changedCurrentRole = false
+                        for (role in UserRole.values()) {
+                            val cloudName = fields["${role.name}_name"] as? String
+                            val cloudPass = fields["${role.name}_pass"] as? String
+                            if (cloudName != null && cloudName != userPrefs.getString("account_name_${role.name}", null)) {
+                                editor.putString("account_name_${role.name}", cloudName)
+                                if (role == _currentUser.value.role) changedCurrentRole = true
+                            }
+                            if (cloudPass != null) {
+                                editor.putString("account_pass_${role.name}", cloudPass)
+                            }
+                        }
+                        editor.apply()
+                        if (changedCurrentRole) {
+                            _currentUser.value = _currentUser.value.copy(
+                                name = getAccountName(_currentUser.value.role)
+                            )
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Ignore: account sync is best-effort, local credentials remain usable offline
+                }
+            }
+
+            // Listen for petugas (worker) list changes from any device: adding or deleting a
+            // petugas on one phone reflects on every other phone automatically.
+            viewModelScope.launch(Dispatchers.IO) {
+                var previousRemoteNames: Set<String>? = null
+                try {
+                    firestoreRepository.listenWorkers().collect { remoteWorkers ->
+                        val remoteNames = remoteWorkers.map { it.name }.toSet()
+                        val local = repository.getActiveWorkers().first()
+                        val localNames = local.map { it.name }.toSet()
+
+                        val bannedNames = setOf("asep", "budi", "joko")
+                        // Add petugas that exist in the cloud but not yet on this phone.
+                        for (remote in remoteWorkers) {
+                            if (remote.name.trim().lowercase() in bannedNames) continue
+                            if (remote.name !in localNames) {
+                                repository.insertWorker(remote)
+                            }
+                        }
+
+                        // Remove petugas locally that used to be in the cloud but were deleted
+                        // from another phone, once we have a previous snapshot to compare to.
+                        val knownBefore = previousRemoteNames
+                        if (knownBefore != null) {
+                            val removedFromCloud = knownBefore - remoteNames
+                            if (removedFromCloud.isNotEmpty()) {
+                                val toDelete = local.filter { it.name in removedFromCloud }
+                                for (w in toDelete) {
+                                    repository.deleteWorker(w)
+                                }
+                            }
+                        }
+                        previousRemoteNames = remoteNames
+                    }
+                } catch (_: Exception) {
+                    // Ignore: worker sync is best-effort, local petugas list remains usable offline
+                }
+            }
+
+            // Listen for broadcast push notifications sent from any device
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    firestoreRepository.listenBroadcastPushes().collect { pushes ->
+                        for (push in pushes) {
+                            if (push.timestamp >= appLaunchTime - 15_000L && push.id !in notifiedBroadcastPushIds) {
+                                notifiedBroadcastPushIds.add(push.id)
+                                NotificationHelper.showNotification(
+                                    getApplication(),
+                                    push.title.ifBlank { "Notifikasi Lion Steam" },
+                                    "${push.message}\n(Pengirim: ${push.senderName})"
+                                )
+                                NotificationHelper.playChime(getApplication())
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                }
+            }
+
+            // Automatic Periodic Sync every 5 minutes (Auto-sync 5 menit)
+            viewModelScope.launch(Dispatchers.IO) {
+                while (isActive) {
+                    delay(5 * 60 * 1000L) // 5 minutes
+                    try {
+                        val records = repository.getAllRecords().first()
+                        if (records.isNotEmpty()) {
+                            firestoreRepository.batchUploadLocalRecords(records)
+                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
+                            _cloudSyncStatus.value = "Auto-sync 5 mnt • Terakhir: $timeStr"
+                        }
+                    } catch (_: Exception) {
+                        // Ignore transient network failures
+                    }
+                }
+            }
+        } else {
+            _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+        }
+    }
+
+    val activeWorkers: StateFlow<List<Worker>> = repository.getActiveWorkers()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Store Expenses (Pengeluaran Toko)
+    val allExpenses: StateFlow<List<StoreExpense>> = repository.getAllExpenses()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val todayExpensesTotal: StateFlow<Long> = allExpenses.map { list ->
+        val startOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endOfDay = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+        list.filter { it.timestamp in startOfDay..endOfDay }.sumOf { it.amount }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    val currentMonthExpensesTotal: StateFlow<Long> = allExpenses.map { list ->
+        val now = Calendar.getInstance()
+        val startOfMonth = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val endOfMonth = Calendar.getInstance().apply {
+            set(Calendar.DAY_OF_MONTH, getActualMaximum(Calendar.DAY_OF_MONTH))
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }.timeInMillis
+        list.filter { it.timestamp in startOfMonth..endOfMonth }.sumOf { it.amount }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0L)
+
+    fun saveStoreExpense(
+        id: Long = 0L,
+        title: String,
+        category: String,
+        amount: Long,
+        note: String = "",
+        timestamp: Long = System.currentTimeMillis(),
+        onComplete: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
+        val trimmed = title.trim()
+        if (trimmed.isBlank()) {
+            onComplete(false, "Nama pengeluaran tidak boleh kosong")
+            return
+        }
+        if (amount <= 0L) {
+            onComplete(false, "Nominal pengeluaran harus lebih besar dari Rp 0")
+            return
+        }
+        val user = _currentUser.value
+        val expense = StoreExpense(
+            id = id,
+            title = trimmed,
+            category = category,
+            amount = amount,
+            timestamp = timestamp,
+            recordedBy = user.name,
+            note = note.trim()
+        )
+        viewModelScope.launch {
+            val newId = if (id == 0L) {
+                repository.insertExpense(expense)
+            } else {
+                repository.updateExpense(expense)
+                id
+            }
+            val finalExp = expense.copy(id = newId)
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.saveExpense(finalExp)
+            }
+            onComplete(true, "Pengeluaran toko berhasil dicatat!")
+        }
+    }
 
     fun deleteStoreExpense(
         expense: StoreExpense,
@@ -146,56 +995,1355 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    /**
-     * Deletes a WashRecord locally and stores a copy for potential undo.
-     * The onComplete callback receives (success, message) which the UI can show in a Snackbar.
-     */
-    fun deleteRecordWithUndo(record: WashRecord, onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
-        viewModelScope.launch {
-            try {
-                // Cache the record so it can be restored if user taps Undo
-                recentlyDeletedRecords[record.timestamp] = record
+    private val allRecords: StateFlow<List<WashRecord>> = repository.getAllRecords()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-                // Delete from local DB immediately for responsive UI
-                repository.deleteRecord(record)
-
-                // Fire-and-forget: try to delete from cloud as well (best-effort)
-                viewModelScope.launch(Dispatchers.IO) {
-                    try {
-                        firestoreRepository.deleteTransaction(record)
-                    } catch (_: Exception) {
-                        // ignore cloud failures — local deletion already succeeded
-                    }
-                }
-
-                onComplete(true, "Transaksi dihapus")
-            } catch (e: Exception) {
-                recentlyDeletedRecords.remove(record.timestamp)
-                onComplete(false, "Gagal menghapus transaksi: ${e.message}")
+    // Map of "yyyy-MM-dd" to DayRevenueSummary for fast calendar indicators
+    val dailySummariesMap: StateFlow<Map<String, DayRevenueSummary>> = allRecords.map { records ->
+        val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val map = mutableMapOf<String, DayRevenueSummary>()
+        for (r in records) {
+            val key = sdf.format(Date(r.timestamp))
+            val prev = map[key]
+            if (prev == null) {
+                map[key] = DayRevenueSummary(
+                    dateMillis = r.timestamp,
+                    motorCount = r.motorCount,
+                    totalRevenue = r.totalPrice,
+                    totalOwnerShare = r.totalOwnerShare
+                )
+            } else {
+                map[key] = prev.copy(
+                    motorCount = prev.motorCount + r.motorCount,
+                    totalRevenue = prev.totalRevenue + r.totalPrice,
+                    totalOwnerShare = prev.totalOwnerShare + r.totalOwnerShare
+                )
             }
+        }
+        map
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // Combined filtered records based on time period, custom date, and search query
+    val filteredRecords: StateFlow<List<WashRecord>> = combine(
+        allRecords,
+        _selectedPeriod,
+        _selectedDateMillis,
+        _searchQuery
+    ) { records, period, customDate, query ->
+        val (start, end) = FormatUtils.getPeriodTimestampRange(period, customDate)
+        val periodFiltered = records.filter { it.timestamp in start..end }
+        if (query.isBlank()) {
+            periodFiltered
+        } else {
+            val q = query.trim().lowercase()
+            periodFiltered.filter { record ->
+                record.licensePlate.lowercase().contains(q) ||
+                record.washerName.lowercase().contains(q) ||
+                record.note.lowercase().contains(q) ||
+                record.motorType.lowercase().contains(q)
+            }
+        }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // Summary calculation for the active period
+    val financialSummary: StateFlow<WashFinancialSummary> = filteredRecords.combine(_selectedPeriod) { records, _ ->
+        var motors = 0
+        var gross = 0L
+        var washer = 0L
+        var owner = 0L
+        var disputedCount = 0
+        var disputedAmt = 0L
+
+        for (item in records) {
+            if (item.validationStatus == "DISPUTED") {
+                disputedCount += item.motorCount
+                disputedAmt += item.totalPrice
+            }
+            motors += item.motorCount
+            gross += item.totalPrice
+            washer += item.totalWasherShare
+            owner += item.totalOwnerShare
+        }
+
+        WashFinancialSummary(
+            totalMotors = motors,
+            totalGrossRevenue = gross,
+            totalWasherShare = washer,
+            totalOwnerShare = owner,
+            disputedMotors = disputedCount,
+            disputedAmount = disputedAmt
+        )
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), WashFinancialSummary())
+
+    // Washer share breakdown
+    val washerBreakdowns: StateFlow<List<WasherShareBreakdown>> = filteredRecords.combine(_selectedPeriod) { records, _ ->
+        val mapCount = mutableMapOf<String, Int>()
+        val mapShare = mutableMapOf<String, Long>()
+
+        for (item in records) {
+            val name = if (item.washerName.isBlank()) "Tanpa Petugas" else item.washerName
+            mapCount[name] = (mapCount[name] ?: 0) + item.motorCount
+            mapShare[name] = (mapShare[name] ?: 0L) + item.totalWasherShare
+        }
+
+        mapCount.map { (name, count) ->
+            WasherShareBreakdown(
+                washerName = name,
+                motorCount = count,
+                totalShare = mapShare[name] ?: 0L
+            )
+        }.sortedByDescending { it.motorCount }
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // In-depth revenue and performance analysis
+    val revenueAnalysis: StateFlow<RevenueAnalysisData> = combine(
+        filteredRecords,
+        _selectedPeriod
+    ) { records, period ->
+        computeRevenueAnalysis(records, period)
+    }.flowOn(Dispatchers.Default)
+    .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), RevenueAnalysisData())
+
+    // Monthly Recap and Summary Data
+    val monthlySummaryData: StateFlow<MonthlySummaryData> = combine(
+        allRecords,
+        _monthlyRecapYear,
+        _monthlyRecapMonth,
+        allExpenses
+    ) { records, year, month, expenses ->
+        val monthNames = listOf(
+            "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+            "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+        )
+        val dayNames = listOf("Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu")
+
+        val calStart = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, 1)
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
+        }
+        val maxDays = calStart.getActualMaximum(Calendar.DAY_OF_MONTH)
+
+        val calEnd = Calendar.getInstance().apply {
+            set(Calendar.YEAR, year)
+            set(Calendar.MONTH, month)
+            set(Calendar.DAY_OF_MONTH, maxDays)
+            set(Calendar.HOUR_OF_DAY, 23)
+            set(Calendar.MINUTE, 59)
+            set(Calendar.SECOND, 59)
+            set(Calendar.MILLISECOND, 999)
+        }
+
+        val startMillis = calStart.timeInMillis
+        val endMillis = calEnd.timeInMillis
+
+        val monthRecords = records.filter { it.timestamp in startMillis..endMillis }
+
+        val sdfKey = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val sdfDay = SimpleDateFormat("EEEE", Locale("id", "ID"))
+
+        val recordsByDay = monthRecords.groupBy { r ->
+            val cal = Calendar.getInstance().apply { timeInMillis = r.timestamp }
+            cal.get(Calendar.DAY_OF_MONTH)
+        }
+
+        val dailyBreakdown = mutableListOf<MonthlyDayRecord>()
+        var totalMotors = 0
+        var totalGross = 0L
+        var totalWasherShare = 0L
+        var totalOwnerShare = 0L
+        var activeDays = 0
+
+        var cash = 0L
+        var qris = 0L
+        var transfer = 0L
+
+        for (day in 1..maxDays) {
+            val dayCal = Calendar.getInstance().apply {
+                set(Calendar.YEAR, year)
+                set(Calendar.MONTH, month)
+                set(Calendar.DAY_OF_MONTH, day)
+                set(Calendar.HOUR_OF_DAY, 12)
+                set(Calendar.MINUTE, 0)
+                set(Calendar.SECOND, 0)
+            }
+            val dayKey = sdfKey.format(dayCal.time)
+            val dayName = try {
+                sdfDay.format(dayCal.time)
+            } catch (_: Exception) {
+                dayNames.getOrElse(dayCal.get(Calendar.DAY_OF_WEEK) - 1) { "" }
+            }
+
+            val dayRecs = recordsByDay[day] ?: emptyList()
+            val dayMotors = dayRecs.sumOf { it.motorCount }
+            val dayGross = dayRecs.sumOf { it.totalPrice }
+            val dayWasher = dayRecs.sumOf { it.totalWasherShare }
+            val dayOwner = dayRecs.sumOf { it.totalOwnerShare }
+
+            if (dayMotors > 0) {
+                activeDays++
+            }
+
+            totalMotors += dayMotors
+            totalGross += dayGross
+            totalWasherShare += dayWasher
+            totalOwnerShare += dayOwner
+
+            val topWasher = dayRecs.groupBy { it.washerName }
+                .maxByOrNull { entry -> entry.value.sumOf { it.motorCount } }
+                ?.let { entry ->
+                    val name = entry.key.ifBlank { "Umum" }
+                    val count = entry.value.sumOf { it.motorCount }
+                    "$name ($count m)"
+                } ?: ""
+
+            dailyBreakdown.add(
+                MonthlyDayRecord(
+                    dayOfMonth = day,
+                    dateMillis = dayCal.timeInMillis,
+                    dateKey = dayKey,
+                    dayName = dayName,
+                    motorCount = dayMotors,
+                    grossRevenue = dayGross,
+                    washerShare = dayWasher,
+                    ownerShare = dayOwner,
+                    topWasherName = topWasher
+                )
+            )
+        }
+
+        for (r in monthRecords) {
+            when {
+                r.paymentMethod.equals("Tunai", ignoreCase = true) -> cash += r.totalPrice
+                r.paymentMethod.contains("QRIS", ignoreCase = true) -> qris += r.totalPrice
+                else -> transfer += r.totalPrice
+            }
+        }
+
+        val washerGroups = monthRecords.groupBy { it.washerName.ifBlank { "Belum Ditentukan" } }
+        val washerStats = washerGroups.map { (name, list) ->
+            val wMotors = list.sumOf { it.motorCount }
+            val wShare = list.sumOf { it.totalWasherShare }
+            val pct = if (totalMotors > 0) (wMotors.toFloat() / totalMotors.toFloat()) * 100f else 0f
+            MonthlyWasherStat(
+                washerName = name,
+                motorCount = wMotors,
+                totalShare = wShare,
+                percentage = pct
+            )
+        }.sortedByDescending { it.motorCount }
+
+        val peakDay = dailyBreakdown.filter { it.motorCount > 0 }.maxByOrNull { it.motorCount }
+
+        val now = Calendar.getInstance()
+        val isCurrentMonth = now.get(Calendar.YEAR) == year && now.get(Calendar.MONTH) == month
+        val elapsedDays = if (isCurrentMonth) now.get(Calendar.DAY_OF_MONTH) else maxDays
+        val divisor = elapsedDays.coerceAtLeast(1)
+
+        val avgMotors = totalMotors.toFloat() / divisor.toFloat()
+        val avgGross = totalGross / divisor
+        val avgOwner = totalOwnerShare / divisor
+
+        val monthExpenses = expenses.filter { it.timestamp in startMillis..endMillis }.sumOf { it.amount }
+        val netProfit = totalOwnerShare - monthExpenses
+
+        MonthlySummaryData(
+            year = year,
+            month = month,
+            monthName = monthNames.getOrElse(month) { "Bulan ${month + 1}" },
+            totalMotors = totalMotors,
+            totalGrossRevenue = totalGross,
+            totalWasherShare = totalWasherShare,
+            totalOwnerShare = totalOwnerShare,
+            activeDaysCount = activeDays,
+            daysInMonth = maxDays,
+            averageDailyMotors = avgMotors,
+            averageDailyGross = avgGross,
+            averageDailyOwnerShare = avgOwner,
+            peakDay = peakDay,
+            dailyBreakdown = dailyBreakdown,
+            washerStats = washerStats,
+            cashAmount = cash,
+            qrisAmount = qris,
+            transferAmount = transfer,
+            totalExpenses = monthExpenses,
+            netProfitAfterExpenses = netProfit
+        )
+    }.flowOn(Dispatchers.Default)
+    .stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        MonthlySummaryData(
+            year = Calendar.getInstance().get(Calendar.YEAR),
+            month = Calendar.getInstance().get(Calendar.MONTH),
+            monthName = "",
+            totalMotors = 0,
+            totalGrossRevenue = 0L,
+            totalWasherShare = 0L,
+            totalOwnerShare = 0L,
+            activeDaysCount = 0,
+            daysInMonth = 30,
+            averageDailyMotors = 0f,
+            averageDailyGross = 0L,
+            averageDailyOwnerShare = 0L,
+            peakDay = null,
+            dailyBreakdown = emptyList(),
+            washerStats = emptyList(),
+            cashAmount = 0L,
+            qrisAmount = 0L,
+            transferAmount = 0L,
+            totalExpenses = 0L,
+            netProfitAfterExpenses = 0L
+        )
+    )
+
+    fun setMonthlyRecapMonth(year: Int, month: Int) {
+        _monthlyRecapYear.value = year
+        _monthlyRecapMonth.value = month
+    }
+
+    fun nextMonthlyRecapMonth() {
+        val m = _monthlyRecapMonth.value
+        val y = _monthlyRecapYear.value
+        if (m == 11) {
+            _monthlyRecapYear.value = y + 1
+            _monthlyRecapMonth.value = 0
+        } else {
+            _monthlyRecapMonth.value = m + 1
         }
     }
 
-    /**
-     * Restores a previously deleted record (if available in cache).
-     */
-    fun restoreRecord(record: WashRecord, onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+    fun prevMonthlyRecapMonth() {
+        val m = _monthlyRecapMonth.value
+        val y = _monthlyRecapYear.value
+        if (m == 0) {
+            _monthlyRecapYear.value = y - 1
+            _monthlyRecapMonth.value = 11
+        } else {
+            _monthlyRecapMonth.value = m - 1
+        }
+    }
+
+    fun resetMonthlyRecapToCurrent() {
+        val cal = Calendar.getInstance()
+        _monthlyRecapYear.value = cal.get(Calendar.YEAR)
+        _monthlyRecapMonth.value = cal.get(Calendar.MONTH)
+    }
+
+    private val prefs by lazy {
+        getApplication<Application>().getSharedPreferences("dream_goal_prefs", Context.MODE_PRIVATE)
+    }
+
+    private val _dreamGoalConfig = MutableStateFlow(loadDreamGoalConfig())
+    val dreamGoalConfig: StateFlow<DreamGoalConfig> = _dreamGoalConfig.asStateFlow()
+
+    private fun loadDreamGoalConfig(): DreamGoalConfig {
+        val itemName = prefs.getString("item_name", "Kompresor Steam Matrix 2 HP") ?: "Kompresor Steam Matrix 2 HP"
+        val targetAmount = prefs.getLong("target_amount", 2_200_000L)
+        val initialSavings = prefs.getLong("initial_savings", 0L)
+        val sourceStr = prefs.getString("source", SavingsSource.TOTAL_REVENUE.name) ?: SavingsSource.TOTAL_REVENUE.name
+        val source = try {
+            SavingsSource.valueOf(sourceStr)
+        } catch (_: Exception) {
+            SavingsSource.TOTAL_REVENUE
+        }
+        val targetForStr = prefs.getString("target_for", SavingsTargetFor.PEMILIK.name) ?: SavingsTargetFor.PEMILIK.name
+        val targetFor = try {
+            SavingsTargetFor.valueOf(targetForStr)
+        } catch (_: Exception) {
+            SavingsTargetFor.PEMILIK
+        }
+        val dailyTarget = prefs.getLong("daily_target", 100_000L)
+        return DreamGoalConfig(
+            itemName = itemName,
+            targetAmount = targetAmount,
+            initialSavings = initialSavings,
+            savingSource = source,
+            targetFor = targetFor,
+            dailyTargetAmount = dailyTarget
+        )
+    }
+
+    fun updateDreamGoalConfig(newConfig: DreamGoalConfig) {
+        _dreamGoalConfig.value = newConfig
+        prefs.edit()
+            .putString("item_name", newConfig.itemName)
+            .putLong("target_amount", newConfig.targetAmount)
+            .putLong("initial_savings", newConfig.initialSavings)
+            .putString("source", newConfig.savingSource.name)
+            .putString("target_for", newConfig.targetFor.name)
+            .putLong("daily_target", newConfig.dailyTargetAmount)
+            .apply()
+    }
+
+    private val companyPrefs by lazy {
+        getApplication<Application>().getSharedPreferences("company_profile_prefs", Context.MODE_PRIVATE)
+    }
+
+    private val _companyProfile = MutableStateFlow(loadCompanyProfile())
+    val companyProfile: StateFlow<CompanyProfile> = _companyProfile.asStateFlow()
+
+    private fun loadCompanyProfile(): CompanyProfile {
+        return CompanyProfile(
+            companyName = companyPrefs.getString("company_name", "PT. LION STEAM MOTOR") ?: "PT. LION STEAM MOTOR",
+            divisionName = companyPrefs.getString("division_name", "DIVISI OPERASIONAL & PERAWATAN KENDARAAN") ?: "DIVISI OPERASIONAL & PERAWATAN KENDARAAN",
+            companyAddress = companyPrefs.getString("company_address", "Kawasan Sentra Bisnis Otomotif Terpadu") ?: "Kawasan Sentra Bisnis Otomotif Terpadu",
+            companyPhone = companyPrefs.getString("company_phone", "0812-3456-7890") ?: "0812-3456-7890",
+            legalRegNo = companyPrefs.getString("legal_reg_no", "AHU-0038912.AH.01.01 / NIB: 9120003482190") ?: "AHU-0038912.AH.01.01 / NIB: 9120003482190",
+            directorName = companyPrefs.getString("director_name", "Bpk. Mohamad Ricky, S.H. (Direktur Utama)") ?: "Bpk. Mohamad Ricky, S.H. (Direktur Utama)",
+            financeManagerName = companyPrefs.getString("finance_manager_name", "Muhamad Agung Kurniawan (Manajer Keuangan)") ?: "Muhamad Agung Kurniawan (Manajer Keuangan)",
+            cashierName = companyPrefs.getString("cashier_name", "Admin / Kasir Operasional") ?: "Admin / Kasir Operasional"
+        )
+    }
+
+    fun updateCompanyProfile(newProfile: CompanyProfile) {
+        _companyProfile.value = newProfile
+        companyPrefs.edit()
+            .putString("company_name", newProfile.companyName)
+            .putString("division_name", newProfile.divisionName)
+            .putString("company_address", newProfile.companyAddress)
+            .putString("company_phone", newProfile.companyPhone)
+            .putString("legal_reg_no", newProfile.legalRegNo)
+            .putString("director_name", newProfile.directorName)
+            .putString("finance_manager_name", newProfile.financeManagerName)
+            .putString("cashier_name", newProfile.cashierName)
+            .apply()
+    }
+
+    fun generateDocumentNumber(prefix: String = "FIN-OPS", month: Int, year: Int): String {
+        val romanMonths = listOf("I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X", "XI", "XII")
+        val roman = if (month in 1..12) romanMonths[month - 1] else "IX"
+        val serial = String.format(Locale.getDefault(), "%03d", (month * 7 + (year % 100)) % 900 + 101)
+        val shortName = _companyProfile.value.companyName
+            .replace("PT.", "", ignoreCase = true)
+            .replace("PT", "", ignoreCase = true)
+            .trim()
+            .split(" ")
+            .filter { it.isNotBlank() }
+            .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+            .joinToString("")
+            .ifBlank { "KMG" }
+        return "$serial/$prefix/PT-$shortName/$roman/$year"
+    }
+
+    // Reactive Dream Goal Progress based on daily revenue and total accumulated income
+    val dreamGoalProgress: StateFlow<DreamGoalProgress> = combine(
+        allRecords,
+        _dreamGoalConfig
+    ) { records, config ->
+        val (todayStart, todayEnd) = FormatUtils.getPeriodTimestampRange(TimePeriod.HARI_INI)
+        val todayRecords = records.filter { it.timestamp in todayStart..todayEnd }
+
+        val todayGross = todayRecords.sumOf { it.totalPrice }
+        val todayOwner = todayRecords.sumOf { it.totalOwnerShare }
+        val todayWasher = todayRecords.sumOf { it.totalWasherShare }
+
+        val totalGross = records.sumOf { it.totalPrice }
+        val totalOwner = records.sumOf { it.totalOwnerShare }
+        val totalWasher = records.sumOf { it.totalWasherShare }
+
+        val todayRev = when (config.savingSource) {
+            SavingsSource.TOTAL_REVENUE -> todayGross
+            SavingsSource.OWNER_SHARE -> todayOwner
+            SavingsSource.WASHER_SHARE -> todayWasher
+        }
+        val totalAcc = when (config.savingSource) {
+            SavingsSource.TOTAL_REVENUE -> totalGross
+            SavingsSource.OWNER_SHARE -> totalOwner
+            SavingsSource.WASHER_SHARE -> totalWasher
+        }
+
+        val totalSaved = config.initialSavings + totalAcc
+        val remaining = (config.targetAmount - totalSaved).coerceAtLeast(0L)
+        val progress = if (config.targetAmount > 0) (totalSaved.toFloat() / config.targetAmount.toFloat()).coerceIn(0f, 1f) else 1f
+        val todayContrib = if (config.targetAmount > 0) (todayRev.toFloat() / config.targetAmount.toFloat()).coerceIn(0f, 1f) else 0f
+        val todayDailyPercent = if (config.dailyTargetAmount > 0) (todayRev.toFloat() / config.dailyTargetAmount.toFloat()).coerceIn(0f, 1f) else 0f
+
+        val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val distinctDays = records.map { dateFmt.format(Date(it.timestamp)) }.distinct().size.coerceAtLeast(1)
+        val avgDaily = if (distinctDays > 0) totalAcc / distinctDays else todayRev
+        val effectiveDaily = if (avgDaily > 0) avgDaily else (if (todayRev > 0) todayRev else 50_000L)
+
+        val estDays = if (remaining <= 0) 0 else ceil(remaining.toDouble() / effectiveDaily.toDouble()).toInt()
+
+        DreamGoalProgress(
+            config = config,
+            todayGrossRevenue = todayGross,
+            todayOwnerShare = todayOwner,
+            todayRevenue = todayRev,
+            totalAccumulatedRevenue = totalAcc,
+            totalSaved = totalSaved,
+            remainingAmount = remaining,
+            progressPercent = progress,
+            todayContributionPercent = todayContrib,
+            todayDailyTargetPercent = todayDailyPercent,
+            isAchieved = totalSaved >= config.targetAmount,
+            estimatedDaysRemaining = estDays,
+            averageDailyRevenue = effectiveDaily
+        )
+    }.stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        DreamGoalProgress(
+            config = DreamGoalConfig(),
+            todayGrossRevenue = 0L,
+            todayOwnerShare = 0L,
+            todayRevenue = 0L,
+            totalAccumulatedRevenue = 0L,
+            totalSaved = 0L,
+            remainingAmount = 2_200_000L,
+            progressPercent = 0f,
+            todayContributionPercent = 0f,
+            todayDailyTargetPercent = 0f,
+            isAchieved = false,
+            estimatedDaysRemaining = 0,
+            averageDailyRevenue = 0L
+        )
+    )
+
+    private fun computeRevenueAnalysis(records: List<WashRecord>, period: TimePeriod): RevenueAnalysisData {
+        if (records.isEmpty()) {
+            return RevenueAnalysisData(
+                insights = listOf(
+                    "Belum ada data cuci pada periode ini. Mulai catat motor untuk melihat analisis performa dan proyeksi pendapatan."
+                )
+            )
+        }
+
+        val totalMotors = records.sumOf { it.motorCount }
+        val totalGross = records.sumOf { it.totalPrice }
+        val totalWasher = records.sumOf { it.totalWasherShare }
+        val totalOwner = records.sumOf { it.totalOwnerShare }
+
+        val ownerMargin = if (totalGross > 0) {
+            (totalOwner.toFloat() / totalGross.toFloat()) * 100f
+        } else 0f
+
+        // Calculate days for average
+        val daysCount = when (period) {
+            TimePeriod.HARI_INI, TimePeriod.KEMARIN, TimePeriod.TANGGAL_PILIHAN -> 1
+            TimePeriod.TUJUH_HARI -> 7
+            TimePeriod.BULAN_INI -> {
+                val cal = Calendar.getInstance()
+                cal.get(Calendar.DAY_OF_MONTH).coerceAtLeast(1)
+            }
+            TimePeriod.SEMUA -> {
+                val dateFmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                val distinctDays = records.map { dateFmt.format(Date(it.timestamp)) }.distinct().size
+                distinctDays.coerceAtLeast(1)
+            }
+        }
+
+        val avgDailyMotors = totalMotors.toFloat() / daysCount.toFloat()
+        val avgDailyGross = (totalGross / daysCount.toLong())
+        val avgDailyOwner = (totalOwner / daysCount.toLong())
+
+        val projMonthlyGross = avgDailyGross * 30L
+        val projMonthlyOwner = avgDailyOwner * 30L
+
+        // Peak Hours Analysis (Pagi: 06-11, Siang: 11-15, Sore: 15-18, Malam: 18-23)
+        val cal = Calendar.getInstance()
+        var pagiMotors = 0
+        var siangMotors = 0
+        var soreMotors = 0
+        var malamMotors = 0
+
+        for (r in records) {
+            cal.timeInMillis = r.timestamp
+            val hour = cal.get(Calendar.HOUR_OF_DAY)
+            when (hour) {
+                in 6..10 -> pagiMotors += r.motorCount
+                in 11..14 -> siangMotors += r.motorCount
+                in 15..17 -> soreMotors += r.motorCount
+                else -> malamMotors += r.motorCount
+            }
+        }
+
+        val totalSlotMotors = (pagiMotors + siangMotors + soreMotors + malamMotors).coerceAtLeast(1)
+        val timeSlots = listOf(
+            TimeSlotStat("Pagi", "06:00 - 11:00", pagiMotors, (pagiMotors.toFloat() / totalSlotMotors) * 100f),
+            TimeSlotStat("Siang", "11:00 - 15:00", siangMotors, (siangMotors.toFloat() / totalSlotMotors) * 100f),
+            TimeSlotStat("Sore", "15:00 - 18:00", soreMotors, (soreMotors.toFloat() / totalSlotMotors) * 100f),
+            TimeSlotStat("Malam", "18:00 - Tutup", malamMotors, (malamMotors.toFloat() / totalSlotMotors) * 100f)
+        )
+
+        val peakSlotStat = timeSlots.maxByOrNull { it.motorCount }
+        val peakSlotDesc = if (peakSlotStat != null && peakSlotStat.motorCount > 0) {
+            "${peakSlotStat.slotName} (${peakSlotStat.timeRange})"
+        } else {
+            "Merata"
+        }
+
+        // Payment Methods Breakdown
+        val pmMap = mutableMapOf<String, Pair<Int, Long>>()
+        for (r in records) {
+            val method = if (r.paymentMethod.isBlank()) "Tunai" else r.paymentMethod
+            val current = pmMap[method] ?: Pair(0, 0L)
+            pmMap[method] = Pair(current.first + r.motorCount, current.second + r.totalPrice)
+        }
+
+        val paymentMethods = pmMap.map { (method, pair) ->
+            PaymentMethodStat(
+                method = method,
+                motorCount = pair.first,
+                totalAmount = pair.second,
+                percentage = if (totalGross > 0) (pair.second.toFloat() / totalGross.toFloat()) * 100f else 0f
+            )
+        }.sortedByDescending { it.totalAmount }
+
+        // Chart Data Points
+        val chartPoints = if (period == TimePeriod.HARI_INI || period == TimePeriod.KEMARIN) {
+            // Group by 2-hour intervals: 08:00, 10:00, 12:00, 14:00, 16:00, 18:00, 20:00
+            val intervals = listOf(
+                "08:00" to (6..9),
+                "11:00" to (10..12),
+                "14:00" to (13..15),
+                "17:00" to (16..18),
+                "20:00" to (19..23)
+            )
+            intervals.map { (label, range) ->
+                val matching = records.filter {
+                    cal.timeInMillis = it.timestamp
+                    cal.get(Calendar.HOUR_OF_DAY) in range
+                }
+                DailyChartPoint(
+                    label = label,
+                    grossRevenue = matching.sumOf { it.totalPrice },
+                    washerShare = matching.sumOf { it.totalWasherShare },
+                    ownerShare = matching.sumOf { it.totalOwnerShare },
+                    motorCount = matching.sumOf { it.motorCount }
+                )
+            }
+        } else {
+            // Group by day format dd/MM
+            val dayFormat = SimpleDateFormat("dd/MM", Locale.getDefault())
+            val sortedRecords = records.sortedBy { it.timestamp }
+            val groupedByDay = sortedRecords.groupBy { dayFormat.format(Date(it.timestamp)) }
+            groupedByDay.map { (dayLabel, dayList) ->
+                DailyChartPoint(
+                    label = dayLabel,
+                    grossRevenue = dayList.sumOf { it.totalPrice },
+                    washerShare = dayList.sumOf { it.totalWasherShare },
+                    ownerShare = dayList.sumOf { it.totalOwnerShare },
+                    motorCount = dayList.sumOf { it.motorCount }
+                )
+            }.takeLast(10) // Keep last 10 points for clean graph display
+        }
+
+        // Actionable Insights
+        val insights = mutableListOf<String>()
+        insights.add("Kas bersih pemilik menyerap ${String.format(Locale.getDefault(), "%.0f", ownerMargin)}% (${FormatUtils.formatRupiah(totalOwner)}) dari omset kotor ${FormatUtils.formatRupiah(totalGross)}.")
+        if (peakSlotDesc != "Merata") {
+            insights.add("Waktu paling ramai pencucian berada di $peakSlotDesc. Siapkan armada pencuci dan sampo steam maksimal pada waktu ini.")
+        }
+        if (paymentMethods.isNotEmpty()) {
+            val topPm = paymentMethods.first()
+            insights.add("Sebesar ${String.format(Locale.getDefault(), "%.0f", topPm.percentage)}% transaksi menggunakan ${topPm.method}.")
+        }
+        if (avgDailyMotors > 0) {
+            insights.add("Rata-rata volume cuci ${String.format(Locale.getDefault(), "%.1f", avgDailyMotors)} motor/hari. Jika stabil, estimasi kas bersih pemilik mencapai ${FormatUtils.formatRupiah(projMonthlyOwner)} per bulan.")
+        }
+
+        return RevenueAnalysisData(
+            totalMotors = totalMotors,
+            totalGrossRevenue = totalGross,
+            totalWasherShare = totalWasher,
+            totalOwnerShare = totalOwner,
+            ownerMarginPercent = ownerMargin,
+            averageDailyMotors = avgDailyMotors,
+            averageDailyGross = avgDailyGross,
+            averageDailyOwnerNet = avgDailyOwner,
+            projectedMonthlyGross = projMonthlyGross,
+            projectedMonthlyOwnerNet = projMonthlyOwner,
+            peakTimeSlot = peakSlotDesc,
+            timeSlots = timeSlots,
+            paymentMethods = paymentMethods,
+            chartPoints = chartPoints,
+            insights = insights
+        )
+    }
+
+    fun setPeriod(period: TimePeriod) {
+        _selectedPeriod.value = period
+    }
+
+    fun setSelectedDate(dateMillis: Long) {
+        _selectedDateMillis.value = dateMillis
+        _selectedPeriod.value = TimePeriod.TANGGAL_PILIHAN
+    }
+
+    fun selectToday() {
+        _selectedDateMillis.value = System.currentTimeMillis()
+        _selectedPeriod.value = TimePeriod.HARI_INI
+    }
+
+    fun setSearchQuery(query: String) {
+        _searchQuery.value = query
+    }
+
+    fun selectQuickWasher(name: String) {
+        _selectedQuickWasher.value = if (_selectedQuickWasher.value == name) "" else name
+    }
+
+    fun setOrUpdateDailyRevenue(
+        targetDateMillis: Long,
+        motorCount: Int,
+        pricePerMotor: Long = 10000L,
+        washerSharePerMotor: Long = 5000L,
+        washerName: String = "",
+        paymentMethod: String = "Tunai",
+        note: String = "Rekapitulasi omset tanggal ini",
+        replaceExistingForDay: Boolean = true
+    ) {
         viewModelScope.launch {
-            try {
+            val (start, end) = FormatUtils.getDayTimestampRange(targetDateMillis)
+            if (replaceExistingForDay) {
+                repository.deleteRecordsBetween(start, end)
+            }
+
+            if (motorCount > 0) {
+                val totalPrice = pricePerMotor * motorCount
+                val totalWasherShare = washerSharePerMotor * motorCount
+                val totalOwnerShare = totalPrice - totalWasherShare
+
+                val cal = Calendar.getInstance()
+                cal.timeInMillis = targetDateMillis
+                cal.set(Calendar.HOUR_OF_DAY, 12)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+
+                val record = WashRecord(
+                    motorCount = motorCount,
+                    licensePlate = "",
+                    motorType = "Standar (Matic/Bebek)",
+                    washerName = washerName,
+                    pricePerMotor = pricePerMotor,
+                    washerSharePerMotor = washerSharePerMotor,
+                    totalPrice = totalPrice,
+                    totalWasherShare = totalWasherShare,
+                    totalOwnerShare = totalOwnerShare,
+                    paymentMethod = paymentMethod,
+                    note = note,
+                    timestamp = cal.timeInMillis,
+                    createdBy = _currentUser.value.name,
+                    validationStatus = "PENDING"
+                )
                 repository.insertRecord(record)
-                recentlyDeletedRecords.remove(record.timestamp)
+                firestoreRepository.saveTransaction(record)
+                notifyOrderOnce(record)
+            }
 
-                viewModelScope.launch(Dispatchers.IO) {
-                    try {
-                        firestoreRepository.saveTransaction(record)
-                    } catch (_: Exception) {
-                        // ignore
-                    }
-                }
+            _selectedDateMillis.value = targetDateMillis
+            _selectedPeriod.value = TimePeriod.TANGGAL_PILIHAN
+        }
+    }
 
-                onComplete(true, "Transaksi dikembalikan")
-            } catch (e: Exception) {
-                onComplete(false, "Gagal mengembalikan transaksi: ${e.message}")
+    fun quickAddMotorForDate(targetDateMillis: Long, count: Int = 1) {
+        viewModelScope.launch {
+            val washer = _selectedQuickWasher.value
+            val pricePerMotor = 10000L
+            val washerSharePerMotor = 5000L
+            val totalPrice = pricePerMotor * count
+            val totalWasherShare = washerSharePerMotor * count
+            val totalOwnerShare = totalPrice - totalWasherShare
+
+            val timestamp = if (FormatUtils.isToday(targetDateMillis)) {
+                System.currentTimeMillis()
+            } else {
+                val cal = Calendar.getInstance()
+                cal.timeInMillis = targetDateMillis
+                cal.set(Calendar.HOUR_OF_DAY, 12)
+                cal.set(Calendar.MINUTE, 0)
+                cal.set(Calendar.SECOND, 0)
+                cal.timeInMillis
+            }
+
+            val record = WashRecord(
+                motorCount = count,
+                licensePlate = "",
+                motorType = "Standar (Matic/Bebek)",
+                washerName = washer,
+                pricePerMotor = pricePerMotor,
+                washerSharePerMotor = washerSharePerMotor,
+                totalPrice = totalPrice,
+                totalWasherShare = totalWasherShare,
+                totalOwnerShare = totalOwnerShare,
+                paymentMethod = "Tunai",
+                note = "",
+                timestamp = timestamp,
+                createdBy = _currentUser.value.name,
+                validationStatus = "PENDING"
+            )
+            repository.insertRecord(record)
+            firestoreRepository.saveTransaction(record)
+            notifyOrderOnce(record)
+        }
+    }
+
+    fun quickAddMotor(count: Int = 1) {
+        viewModelScope.launch {
+            val washer = _selectedQuickWasher.value
+            val pricePerMotor = 10000L
+            val washerSharePerMotor = 5000L
+            val totalPrice = pricePerMotor * count
+            val totalWasherShare = washerSharePerMotor * count
+            val totalOwnerShare = totalPrice - totalWasherShare
+
+            val record = WashRecord(
+                motorCount = count,
+                licensePlate = "",
+                motorType = "Standar (Matic/Bebek)",
+                washerName = washer,
+                pricePerMotor = pricePerMotor,
+                washerSharePerMotor = washerSharePerMotor,
+                totalPrice = totalPrice,
+                totalWasherShare = totalWasherShare,
+                totalOwnerShare = totalOwnerShare,
+                paymentMethod = "Tunai",
+                note = "",
+                timestamp = System.currentTimeMillis(),
+                createdBy = _currentUser.value.name,
+                validationStatus = "PENDING"
+            )
+            repository.insertRecord(record)
+            firestoreRepository.saveTransaction(record)
+            notifyOrderOnce(record)
+        }
+    }
+
+    fun addOrUpdateRecord(
+        id: Long = 0,
+        motorCount: Int,
+        licensePlate: String,
+        motorType: String,
+        washerName: String,
+        pricePerMotor: Long,
+        washerSharePerMotor: Long,
+        paymentMethod: String,
+        note: String,
+        timestamp: Long = System.currentTimeMillis(),
+        existingRecord: WashRecord? = null
+    ): WashRecord {
+        val totalPrice = pricePerMotor * motorCount
+        val totalWasherShare = washerSharePerMotor * motorCount
+        val totalOwnerShare = totalPrice - totalWasherShare
+
+        val record = WashRecord(
+            id = id,
+            motorCount = motorCount,
+            licensePlate = licensePlate.trim().uppercase(),
+            motorType = motorType,
+            washerName = washerName.trim(),
+            pricePerMotor = pricePerMotor,
+            washerSharePerMotor = washerSharePerMotor,
+            totalPrice = totalPrice,
+            totalWasherShare = totalWasherShare,
+            totalOwnerShare = totalOwnerShare,
+            paymentMethod = paymentMethod,
+            note = note.trim(),
+            timestamp = timestamp,
+            createdBy = existingRecord?.createdBy ?: _currentUser.value.name,
+            validationStatus = existingRecord?.validationStatus ?: "PENDING",
+            disputeReason = existingRecord?.disputeReason ?: "",
+            disputedBy = existingRecord?.disputedBy ?: "",
+            disputedAt = existingRecord?.disputedAt ?: 0L
+        )
+
+        viewModelScope.launch {
+            val finalId = if (id == 0L) {
+                val newId = repository.insertRecord(record)
+                notifyOrderOnce(record.copy(id = newId))
+                newId
+            } else {
+                repository.updateRecord(record)
+                id
+            }
+            firestoreRepository.saveTransaction(record.copy(id = finalId))
+        }
+
+        return record
+    }
+
+    fun disputeTransaction(record: WashRecord, reason: String) {
+        viewModelScope.launch {
+            val updated = record.copy(
+                validationStatus = "DISPUTED",
+                disputeReason = reason.trim(),
+                disputedBy = _currentUser.value.name,
+                disputedAt = System.currentTimeMillis()
+            )
+            repository.updateRecord(updated)
+            firestoreRepository.saveTransaction(updated)
+        }
+    }
+
+    fun validateTransaction(record: WashRecord) {
+        viewModelScope.launch {
+            val updated = record.copy(
+                validationStatus = "VALID",
+                disputeReason = "",
+                disputedBy = "",
+                disputedAt = 0L
+            )
+            repository.updateRecord(updated)
+            firestoreRepository.saveTransaction(updated)
+        }
+    }
+
+    fun revokeDispute(record: WashRecord) {
+        viewModelScope.launch {
+            val updated = record.copy(
+                validationStatus = "PENDING",
+                disputeReason = "",
+                disputedBy = "",
+                disputedAt = 0L
+            )
+            repository.updateRecord(updated)
+            firestoreRepository.saveTransaction(updated)
+        }
+    }
+
+    fun deleteRecord(record: WashRecord) {
+        markOrderAsNotified(record.timestamp)
+        viewModelScope.launch {
+            repository.deleteRecord(record)
+            firestoreRepository.deleteTransaction(record)
+        }
+    }
+
+    fun deleteRecordsForDate(targetDateMillis: Long) {
+        viewModelScope.launch {
+            val (start, end) = FormatUtils.getDayTimestampRange(targetDateMillis)
+            val recordsToDelete = repository.getAllRecords().first().filter { it.timestamp in start..end }
+            recordsToDelete.forEach { markOrderAsNotified(it.timestamp) }
+            repository.deleteRecordsBetween(start, end)
+            for (rec in recordsToDelete) {
+                firestoreRepository.deleteTransaction(rec)
             }
         }
     }
+
+    fun clearAllRecords() {
+        viewModelScope.launch {
+            repository.deleteAllRecords()
+            firestoreRepository.clearAllRemoteTransactions()
+        }
+    }
+
+    fun syncAllLocalToCloud(onComplete: (Int, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val records = repository.getAllRecords().first()
+            if (records.isEmpty()) {
+                onComplete(0, "Belum ada transaksi tersimpan untuk disinkronkan")
+                return@launch
+            }
+            if (!firestoreRepository.isAvailable()) {
+                _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                onComplete(records.size, "Mode lokal aktif: ${records.size} transaksi aman tersimpan di HP")
+                return@launch
+            }
+            val res = firestoreRepository.batchUploadLocalRecords(records)
+            res.onSuccess { count ->
+                _cloudSyncStatus.value = "Tersinkron • $count transaksi di cloud"
+                onComplete(count, "Berhasil menyinkronkan $count transaksi ke Cloud")
+            }.onFailure { err ->
+                val errorMsg = err.message ?: ""
+                val isPermission = errorMsg.contains("PERMISSION_DENIED", ignoreCase = true)
+                val userMsg = if (isPermission) {
+                    "Firebase terhubung, namun aturan akses Firestore Rules belum dibuka (Permission Denied). Data transaksi tetap aman di HP."
+                } else {
+                    "Koneksi Cloud tertunda (${err.localizedMessage ?: "Cek koneksi internet"}). Data transaksi aman di HP."
+                }
+                _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+                onComplete(0, userMsg)
+            }
+        }
+    }
+
+    fun addWorker(name: String) {
+        if (name.isBlank()) return
+        val worker = Worker(name = name.trim())
+        viewModelScope.launch {
+            repository.insertWorker(worker)
+            // Push to Firestore so the new petugas shows up on every other phone too.
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.saveWorker(worker)
+            }
+        }
+    }
+
+    fun deleteWorker(worker: Worker) {
+        viewModelScope.launch {
+            repository.deleteWorker(worker)
+            if (_selectedQuickWasher.value == worker.name) {
+                _selectedQuickWasher.value = ""
+            }
+            // Remove from Firestore so the deletion also reflects on every other phone.
+            viewModelScope.launch(Dispatchers.IO) {
+                firestoreRepository.deleteWorkerRemote(worker.name)
+            }
+        }
+    }
+
+    fun buildWhatsAppReportText(): String {
+        return buildCorporateWhatsAppDailyReport()
+    }
+
+    fun buildCorporateWhatsAppDailyReport(): String {
+        val period = _selectedPeriod.value
+        val summary = financialSummary.value
+        val breakdowns = washerBreakdowns.value
+        val profile = _companyProfile.value
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("OPS-HARIAN", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+
+        val ownerMargin = if (summary.totalGrossRevenue > 0) {
+            (summary.totalOwnerShare.toFloat() / summary.totalGrossRevenue.toFloat()) * 100f
+        } else 0f
+
+        val sb = StringBuilder()
+        sb.append("🏢 *${profile.companyName.uppercase()}*\n")
+        sb.append("*${profile.divisionName}*\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("📑 *MEMORANDUM KEUANGAN HARIAN (AUDITED)*\n")
+        sb.append("No. Dokumen : $docNo\n")
+        sb.append("Sifat       : RAHASIA & TERBATAS\n")
+        sb.append("Periode     : ${period.title} ($currentDateStr)\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        sb.append("Kepada Yth,\n")
+        sb.append("*Dewan Direksi & Manajemen ${profile.companyName}*\n\n")
+        sb.append("Berikut terlampir Laporan Pertanggungjawaban Finansial Operasional Terverifikasi Sistem:\n\n")
+
+        sb.append("📊 *I. RINGKASAN EKSEKUTIF OPERASIONAL*\n")
+        sb.append("• Total Armada Dilayani  : *${summary.totalMotors} Unit*\n")
+        sb.append("• Pendapatan Kotor (Gross): *${FormatUtils.formatRupiah(summary.totalGrossRevenue)}*\n")
+        sb.append("• Beban Jasa Tenaga Cuci : *${FormatUtils.formatRupiah(summary.totalWasherShare)}* (50.0%)\n")
+        sb.append("• Laba Bersih Kas PT/Owner: *${FormatUtils.formatRupiah(summary.totalOwnerShare)}* (${String.format(Locale.getDefault(), "%.0f", ownerMargin)}%)\n\n")
+
+        if (breakdowns.isNotEmpty()) {
+            sb.append("👥 *II. PERTANGGUNGJAWABAN HAK KOMISI OPERATOR*\n")
+            breakdowns.forEachIndexed { idx, item ->
+                sb.append("${idx + 1}. *${item.washerName}*: ${item.motorCount} unit • Hak: *${FormatUtils.formatRupiah(item.totalShare)}*\n")
+            }
+            sb.append("\n")
+        }
+
+        sb.append("📌 *III. PENGESAHAN DOKUMEN SISTEM*\n")
+        sb.append("• Dibuat Oleh   : ${profile.cashierName}\n")
+        sb.append("• Diperiksa     : ${profile.financeManagerName}\n")
+        sb.append("• Disahkan Oleh : ${profile.directorName}\n")
+        sb.append("• Status Sistem : TERVERIFIKASI SISTEM PEMBUKUAN OTOMATIS\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("Demikian laporan resmi ini diterbitkan secara sah.\n")
+        sb.append("🏛️ *${profile.companyName}*")
+        return sb.toString()
+    }
+
+    fun buildRevenueAnalysisShareText(): String {
+        val period = _selectedPeriod.value
+        val analysis = revenueAnalysis.value
+        val profile = _companyProfile.value
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("ANL-RISK", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+
+        val sb = StringBuilder()
+        sb.append("🏢 *${profile.companyName.uppercase()}*\n")
+        sb.append("*LAPORAN ANALISIS KINERJA & ARUS KAS KORPORAT*\n")
+        sb.append("No. Dok: $docNo | Sifat: Dokumen Manajemen Eksekutif\n")
+        sb.append("Periode: ${period.title} ($currentDateStr)\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        sb.append("📊 *I. INDIKATOR PERFORMA BISNIS (KPI)*\n")
+        sb.append("• Total Armada Dikerjakan: *${analysis.totalMotors} Unit*\n")
+        sb.append("• Pendapatan Bruto (Gross): *${FormatUtils.formatRupiah(analysis.totalGrossRevenue)}*\n")
+        sb.append("• Beban Jasa Petugas Cuci: *${FormatUtils.formatRupiah(analysis.totalWasherShare)}*\n")
+        sb.append("• Laba Bersih Kas Pemilik: *${FormatUtils.formatRupiah(analysis.totalOwnerShare)}* (${String.format(Locale.getDefault(), "%.0f", analysis.ownerMarginPercent)}% Margin)\n\n")
+
+        sb.append("📈 *II. RATA-RATA & PROYEKSI FINANSIAL*\n")
+        sb.append("• Throughput Rata-rata   : ${String.format(Locale.getDefault(), "%.1f", analysis.averageDailyMotors)} motor/hari\n")
+        sb.append("• Rata-rata Laba Bersih  : ${FormatUtils.formatRupiah(analysis.averageDailyOwnerNet)}/hari\n")
+        sb.append("• Proyeksi Kas Bulan Ini : ${FormatUtils.formatRupiah(analysis.projectedMonthlyOwnerNet)}\n")
+        sb.append("• Jam Operasional Puncak : ${analysis.peakTimeSlot}\n\n")
+
+        if (analysis.paymentMethods.isNotEmpty()) {
+            sb.append("💳 *III. REKONSILIASI KANAL PEMBAYARAN*\n")
+            for (pm in analysis.paymentMethods) {
+                sb.append("• ${pm.method}: ${pm.motorCount} unit (${String.format(Locale.getDefault(), "%.0f", pm.percentage)}%)\n")
+            }
+            sb.append("\n")
+        }
+
+        if (analysis.insights.isNotEmpty()) {
+            sb.append("💡 *IV. CATATAN AUDIT & INSIGHT DIREKSI*\n")
+            for (ins in analysis.insights) {
+                sb.append("• $ins\n")
+            }
+            sb.append("\n")
+        }
+
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("Disahkan oleh *${profile.directorName}* • ${profile.companyName}")
+        return sb.toString()
+    }
+
+    fun buildDreamGoalShareText(): String {
+        val progress = dreamGoalProgress.value
+        val profile = _companyProfile.value
+        val percent = String.format(Locale.getDefault(), "%.1f%%", progress.progressPercent * 100f)
+        val sb = StringBuilder()
+        sb.append("🎯 *${profile.companyName.uppercase()}*\n")
+        sb.append("*RENCANA ALOKASI INVESTASI & DANA CADANGAN USAHA*\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("📌 *Target Belanja Modal:* ${progress.config.itemName}\n")
+        sb.append("💰 *Anggaran Biaya:* ${FormatUtils.formatRupiah(progress.config.targetAmount)}\n")
+        sb.append("📈 *Dana Terakumulasi:* ${FormatUtils.formatRupiah(progress.totalSaved)} ($percent)\n")
+        sb.append("⚡ *Realisasi Hari Ini:* +${FormatUtils.formatRupiah(progress.todayRevenue)}\n")
+        sb.append("⏳ *Sisa Kebutuhan Dana:* ${if (progress.remainingAmount <= 0) "TERPENUHI LUNAS! 🎉" else FormatUtils.formatRupiah(progress.remainingAmount)}\n")
+        sb.append("🗓️ *Estimasi Waktu:* ${if (progress.isAchieved) "Target Investasi Tercapai! ✨" else "~${progress.estimatedDaysRemaining} Hari Operasional"}\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("💡 _Basis Alokasi Kas: ${progress.config.savingSource.label}_\n")
+        sb.append("📱 _Dicatat oleh Sistem Terpadu ${profile.companyName}_")
+        return sb.toString()
+    }
+
+    fun buildMonthlyReportWhatsAppText(summary: MonthlySummaryData = monthlySummaryData.value): String {
+        return buildCorporateWhatsAppReport(summary)
+    }
+
+    fun buildCorporateWhatsAppReport(
+        summary: MonthlySummaryData = monthlySummaryData.value,
+        profile: CompanyProfile = _companyProfile.value
+    ): String {
+        val docNo = generateDocumentNumber("FIN-OPS", summary.month + 1, summary.year)
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val ownerMargin = if (summary.totalGrossRevenue > 0) {
+            (summary.totalOwnerShare.toFloat() / summary.totalGrossRevenue.toFloat()) * 100f
+        } else 0f
+
+        val sb = StringBuilder()
+        sb.append("🏢 *${profile.companyName.uppercase()}*\n")
+        sb.append("*${profile.divisionName}*\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("📑 *MEMORANDUM LAPORAN KEUANGAN RESMI (AUDITED)*\n")
+        sb.append("No. Dokumen : $docNo\n")
+        sb.append("Sifat       : RAHASIA & TERBATAS (CONFIDENTIAL)\n")
+        sb.append("Periode     : ${summary.monthName.uppercase()} ${summary.year}\n")
+        sb.append("Tanggal     : $currentDateStr\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n")
+
+        sb.append("Kepada Yth,\n")
+        sb.append("*Dewan Direksi & Manajemen ${profile.companyName}*\n\n")
+        sb.append("Dengan hormat,\n")
+        sb.append("Bersama ini kami sampaikan Laporan Pertanggungjawaban Finansial dan Kinerja Operasional Divisi Perawatan Kendaraan untuk periode ${summary.monthName} ${summary.year} yang telah diverifikasi secara akuntabel:\n\n")
+
+        sb.append("📊 *I. RINGKASAN EKSEKUTIF (EXECUTIVE SUMMARY)*\n")
+        sb.append("• Total Armada Dilayani  : *${summary.totalMotors} Unit*\n")
+        sb.append("• Pendapatan Kotor (Gross): *${FormatUtils.formatRupiah(summary.totalGrossRevenue)}*\n")
+        sb.append("• Beban Jasa Tenaga Cuci : *${FormatUtils.formatRupiah(summary.totalWasherShare)}* (50.0%)\n")
+        sb.append("• Laba Bersih Kas PT/Owner: *${FormatUtils.formatRupiah(summary.totalOwnerShare)}* (${String.format(Locale.getDefault(), "%.0f", ownerMargin)}%)\n")
+        sb.append("• Throughput Rata-rata   : ${String.format(Locale.getDefault(), "%.1f", summary.averageDailyMotors)} unit/hari aktif\n")
+        sb.append("• Hari Kerja Operasional : ${summary.activeDaysCount} dari ${summary.daysInMonth} hari\n")
+        if (summary.peakDay != null) {
+            sb.append("• 🏆 Rekor Hari Teramai  : ${summary.peakDay.dayName}, ${summary.peakDay.dayOfMonth} ${summary.monthName} (${summary.peakDay.motorCount} unit - ${FormatUtils.formatRupiah(summary.peakDay.grossRevenue)})\n")
+        }
+        sb.append("\n")
+
+        sb.append("💳 *II. SALURAN PENERIMAAN KAS & BANK*\n")
+        val grossFloat = if (summary.totalGrossRevenue > 0) summary.totalGrossRevenue.toFloat() else 1f
+        val cashPct = (summary.cashAmount.toFloat() / grossFloat) * 100f
+        val qrisPct = (summary.qrisAmount.toFloat() / grossFloat) * 100f
+        sb.append("• Kas Tunai (Cash on Hand) : ${FormatUtils.formatRupiah(summary.cashAmount)} (${String.format(Locale.getDefault(), "%.1f", cashPct)}%)\n")
+        sb.append("• QRIS Merchant Settlement : ${FormatUtils.formatRupiah(summary.qrisAmount)} (${String.format(Locale.getDefault(), "%.1f", qrisPct)}%)\n")
+        if (summary.transferAmount > 0) {
+            val trfPct = (summary.transferAmount.toFloat() / grossFloat) * 100f
+            sb.append("• Transfer Rekening Bank   : ${FormatUtils.formatRupiah(summary.transferAmount)} (${String.format(Locale.getDefault(), "%.1f", trfPct)}%)\n")
+        }
+        sb.append("\n")
+
+        if (summary.washerStats.isNotEmpty()) {
+            sb.append("👥 *III. ALOKASI BEBAN HONORARIUM OPERATOR*\n")
+            summary.washerStats.forEachIndexed { idx, w ->
+                sb.append("${idx + 1}. *${w.washerName}*: ${w.motorCount} unit • Hak: *${FormatUtils.formatRupiah(w.totalShare)}* (${String.format(Locale.getDefault(), "%.0f", w.percentage)}%)\n")
+            }
+            sb.append("\n")
+        }
+
+        sb.append("📌 *IV. LEMBAR PENGESAHAN & OTORISASI PERUSAHAAN*\n")
+        sb.append("• Dibuat Oleh   : ${profile.cashierName}\n")
+        sb.append("• Diperiksa     : ${profile.financeManagerName}\n")
+        sb.append("• Disahkan Oleh : ${profile.directorName}\n")
+        sb.append("• Status Sistem : TERVERIFIKASI DIGITAL & TERAKREDITASI SISTEM\n")
+        sb.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n")
+        sb.append("Demikian laporan resmi ini diterbitkan secara sah dan akuntabel.\n")
+        sb.append("🏛️ *${profile.companyName}*")
+        return sb.toString()
+    }
+
+    fun buildMonthlyCsvContent(summary: MonthlySummaryData = monthlySummaryData.value): String {
+        return buildCorporateMonthlyCsv(summary)
+    }
+
+    fun buildCorporateMonthlyCsv(
+        summary: MonthlySummaryData = monthlySummaryData.value,
+        profile: CompanyProfile = _companyProfile.value
+    ): String {
+        val docNo = generateDocumentNumber("FIN-OPS", summary.month + 1, summary.year)
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val sb = StringBuilder()
+
+        // Header KOP SURAT RESMI PERUSAHAAN
+        sb.append("\"====================================================================================================\"\n")
+        sb.append("\"${profile.companyName.uppercase()} - ${profile.divisionName}\"\n")
+        sb.append("\"LAPORAN KEUANGAN OPERASIONAL & PERTANGGUNGJAWABAN KAS RESMI (CORPORATE FINANCIAL STATEMENT)\"\n")
+        sb.append("\"Izin Usaha / NIB: ${profile.legalRegNo} | Alamat: ${profile.companyAddress}\"\n")
+        sb.append("\"No. Dokumen: $docNo\",\"Sifat: RAHASIA & TERBATAS (CONFIDENTIAL)\",\"Periode: ${summary.monthName} ${summary.year}\"\n")
+        sb.append("\"Tanggal Terbit: $currentDateStr\",\"Status Audit: TERVERIFIKASI SISTEM PEMBUKUAN OTOMATIS\",\"Mata Uang: IDR (Rupiah)\"\n")
+        sb.append("\"====================================================================================================\"\n\n")
+
+        // SECTION 1: RINGKASAN EKSEKUTIF FINANSIAL
+        sb.append("\"--- 1. RINGKASAN EKSEKUTIF FINANSIAL (EXECUTIVE SUMMARY) ---\"\n")
+        sb.append("Indikator Finansial,Nilai Akumulasi,Satuan,Keterangan\n")
+        sb.append("Total Volume Armada,${summary.totalMotors},Unit,Volume jasa cuci terselesaikan\n")
+        sb.append("Total Pendapatan Bruto (Gross),${summary.totalGrossRevenue},Rupiah,Penerimaan tarif Rp 10.000/motor\n")
+        sb.append("Beban Jasa Operator Cuci,${summary.totalWasherShare},Rupiah,Alokasi bagi hasil 50% (Rp 5.000/motor)\n")
+        sb.append("Laba Bersih Kas Pemilik / PT,${summary.totalOwnerShare},Rupiah,Sisa hasil usaha bersih 50%\n")
+        sb.append("Rata-rata Volume Harian,${String.format(Locale.getDefault(), "%.1f", summary.averageDailyMotors)},Unit/Hari,Dihitung dari hari aktif operasional\n")
+        sb.append("Hari Buka Operasional,${summary.activeDaysCount},Hari,Total hari kerja dalam periode\n\n")
+
+        // SECTION 2: SALURAN KAS & PEMBAYARAN
+        sb.append("\"--- 2. REKAPITULASI PENERIMAAN KAS & REKENING (CASH FLOW RECONCILIATION) ---\"\n")
+        sb.append("Saluran Pembayaran,Nominal (Rp),Proporsi (%),Status Rekonsiliasi\n")
+        val grossFloat = if (summary.totalGrossRevenue > 0) summary.totalGrossRevenue.toFloat() else 1f
+        val cashPct = (summary.cashAmount.toFloat() / grossFloat) * 100f
+        val qrisPct = (summary.qrisAmount.toFloat() / grossFloat) * 100f
+        val trfPct = (summary.transferAmount.toFloat() / grossFloat) * 100f
+        sb.append("Kas Tunai (Cash on Hand),${summary.cashAmount},${String.format(Locale.getDefault(), "%.1f", cashPct)}%,Fisik Kas Kasir Terverifikasi\n")
+        sb.append("QRIS Merchant Terintegrasi,${summary.qrisAmount},${String.format(Locale.getDefault(), "%.1f", qrisPct)}%,Settlement Rekening Penampung\n")
+        if (summary.transferAmount > 0) {
+            sb.append("Transfer Bank Non-Tunai,${summary.transferAmount},${String.format(Locale.getDefault(), "%.1f", trfPct)}%,Mutasi Rekening Bank Valid\n")
+        }
+        sb.append("\n")
+
+        // SECTION 3: REKAPITULASI PEMBUKUAN ARUS KAS HARIAN
+        sb.append("\"--- 3. BUKU BESAR PEMBUKUAN ARUS KAS HARIAN ---\"\n")
+        sb.append("No,Tanggal,Hari,Jumlah Armada,Omset Bruto (Rp),Beban Operator (Rp),Kas Bersih PT (Rp),Operator Bertugas\n")
+        val sdfDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+        summary.dailyBreakdown.forEachIndexed { idx, d ->
+            val dateStr = sdfDate.format(Date(d.dateMillis))
+            val cleanWasher = d.topWasherName.replace(",", ";").replace("\"", "")
+            sb.append("${idx + 1},$dateStr,${d.dayName},${d.motorCount},${d.grossRevenue},${d.washerShare},${d.ownerShare},\"$cleanWasher\"\n")
+        }
+        sb.append("TOTAL AKUMULASI,,,\"${summary.totalMotors}\",\"${summary.totalGrossRevenue}\",\"${summary.totalWasherShare}\",\"${summary.totalOwnerShare}\",\"Semua Petugas\"\n\n")
+
+        // SECTION 4: REKAPITULASI TENAGA KERJA
+        if (summary.washerStats.isNotEmpty()) {
+            sb.append("\"--- 4. PERTANGGUNGJAWABAN HAK KOMISI & HONORARIUM OPERATOR ---\"\n")
+            sb.append("No,Nama Operator Cuci,Volume Unit,Kontribusi (%),Hak Bagi Hasil (Rp),Status Hak\n")
+            summary.washerStats.forEachIndexed { idx, w ->
+                val cleanName = w.washerName.replace(",", " ").replace("\"", "")
+                sb.append("${idx + 1},\"$cleanName\",${w.motorCount},${String.format(Locale.getDefault(), "%.1f", w.percentage)}%,${w.totalShare},Telah Direkonsiliasi\n")
+            }
+            sb.append("\n")
+        }
+
+        // SECTION 5: PENGESAHAN DOKUMEN RESMI PT
+        sb.append("\"--- 5. LEMBAR PENGESAHAN OTORISASI PERUSAHAAN ---\"\n")
+        sb.append("\"Dibuat Oleh: ${profile.cashierName}\",\"Diperiksa Oleh: ${profile.financeManagerName}\",\"Disahkan Oleh: ${profile.directorName}\"\n")
+        sb.append("\"Status: Terverifikasi Digital\",\"Status: Telah Diaudit Akuntansi\",\"Status: Sah & Mengikat Direksi\"\n")
+        sb.append("\"Dokumen ini diterbitkan secara otomatis oleh Sistem Pembukuan Terintegrasi ${profile.companyName}\"\n")
+
+        return sb.toString()
+    }
+
+    fun buildDetailedCsvContent(records: List<WashRecord> = filteredRecords.value): String {
+        return buildCorporateDetailedCsv(records)
+    }
+
+    fun buildCorporateDetailedCsv(
+        records: List<WashRecord> = filteredRecords.value,
+        profile: CompanyProfile = _companyProfile.value
+    ): String {
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("LEDGER-DTL", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+        val currentDateStr = FormatUtils.formatDateFull(System.currentTimeMillis())
+        val sb = StringBuilder()
+
+        sb.append("\"====================================================================================================\"\n")
+        sb.append("\"${profile.companyName.uppercase()} - ${profile.divisionName}\"\n")
+        sb.append("\"BUKU BESAR RINCIAN TRANSAKSI PER UNIT ARMADA KENDARAAN (DETAILED TRANSACTION LEDGER)\"\n")
+        sb.append("\"Izin Usaha / NIB: ${profile.legalRegNo} | Alamat: ${profile.companyAddress}\"\n")
+        sb.append("\"No. Dokumen: $docNo\",\"Sifat: RAHASIA (AUDIT TRAIL)\",\"Tanggal Terbit: $currentDateStr\"\n")
+        sb.append("\"Total Catatan: ${records.size} Rekaman\",\"Mata Uang: IDR (Rupiah)\",\"Status: Terverifikasi Sistem\"\n")
+        sb.append("\"====================================================================================================\"\n\n")
+
+        sb.append("ID,Waktu Lengkap,Tanggal,Jam,Jumlah Motor,Plat Nomor,Tipe Motor,Petugas Cuci,Tarif Per Motor,Bagi Hasil Per Motor,Total Omset Kotor,Bagi Hasil Petugas,Kas Bersih Pemilik,Metode Pembayaran,Catatan Operasional\n")
+        val sdfDate = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
+        val sdfTime = SimpleDateFormat("HH:mm", Locale.getDefault())
+        val sdfFull = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
+        for (r in records) {
+            val d = Date(r.timestamp)
+            val fullTime = sdfFull.format(d)
+            val dateStr = sdfDate.format(d)
+            val timeStr = sdfTime.format(d)
+            val cleanPlate = r.licensePlate.replace(",", " ").replace("\"", "")
+            val cleanWasher = r.washerName.replace(",", " ").replace("\"", "")
+            val cleanNote = r.note.replace(",", ";").replace("\n", " ").replace("\"", "")
+            sb.append("${r.id},$fullTime,$dateStr,$timeStr,${r.motorCount},\"$cleanPlate\",${r.motorType},\"$cleanWasher\",${r.pricePerMotor},${r.washerSharePerMotor},${r.totalPrice},${r.totalWasherShare},${r.totalOwnerShare},${r.paymentMethod},\"$cleanNote\"\n")
+        }
+
+        val totalGross = records.sumOf { it.totalPrice }
+        val totalWasher = records.sumOf { it.totalWasherShare }
+        val totalOwner = records.sumOf { it.totalOwnerShare }
+        val totalMotors = records.sumOf { it.motorCount.toLong() }
+        sb.append("TOTAL AKUMULASI,,,,$totalMotors,,,,,\"Total:\",$totalGross,$totalWasher,$totalOwner,,\n\n")
+
+        sb.append("\"--- LEMBAR PENGESAHAN DIREKSI & AUDITOR ---\"\n")
+        sb.append("\"Dibuat Oleh: ${profile.cashierName}\",\"Diperiksa Oleh: ${profile.financeManagerName}\",\"Disahkan Oleh: ${profile.directorName}\"\n")
+        sb.append("\"Status: Sah & Mengikat\",\"Dokumen Sistem Terintegrasi ${profile.companyName}\",\"\"\n")
+
+        return sb.toString()
+    }
+
+    /**
+     * Generates an official corporate HTML document for Monthly Recap
+     */
+    fun buildCorporateMonthlyHtml(summary: MonthlySummaryData = monthlySummaryData.value): String {
+        val docNo = generateDocumentNumber("FIN-OPS", summary.month + 1, summary.year)
+        return CorporateReportGenerator.generateMonthlyCorporateHtml(
+            summary = summary,
+            profile = _companyProfile.value,
+            documentNumber = docNo
+        )
+    }
+
+    /**
+     * Generates an official corporate HTML document for detailed transaction list
+     */
+    fun buildCorporateDetailedHtml(
+        records: List<WashRecord> = filteredRecords.value,
+        periodTitle: String = _selectedPeriod.value.title
+    ): String {
+        val cal = Calendar.getInstance()
+        val docNo = generateDocumentNumber("LEDGER-DTL", cal.get(Calendar.MONTH) + 1, cal.get(Calendar.YEAR))
+        return CorporateReportGenerator.generateDetailedCorporateHtml(
+            records = records,
+            profile = _companyProfile.value,
+            periodTitle = periodTitle,
+            documentNumber = docNo
+        )
+    }
+
+    fun getAllRecordsList(): List<WashRecord> = allRecords.value
+}

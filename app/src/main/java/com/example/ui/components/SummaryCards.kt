@@ -64,6 +64,8 @@ fun SummaryCardsSection(
             SummaryKpiCard(
                 title = "Total Motor",
                 value = "${summary.totalMotors}",
+                rawValue = summary.totalMotors.toLong(),
+                isCurrency = false,
                 unit = "Motor Dicuci",
                 icon = Icons.Default.DirectionsBike,
                 iconTint = Color(0xFF0284C7),
@@ -75,6 +77,7 @@ fun SummaryCardsSection(
                 title = "Total Omset",
                 value = FormatUtils.formatRupiah(summary.totalGrossRevenue),
                 rawValue = summary.totalGrossRevenue,
+                isCurrency = true,
                 unit = "Pendapatan Kotor",
                 icon = Icons.Default.Payments,
                 iconTint = Color(0xFF16A34A),
@@ -92,6 +95,7 @@ fun SummaryCardsSection(
                 title = "Bagi Hasil Petugas",
                 value = FormatUtils.formatRupiah(summary.totalWasherShare),
                 rawValue = summary.totalWasherShare,
+                isCurrency = true,
                 unit = "Komisi Pekerja",
                 icon = Icons.Default.Handshake,
                 iconTint = Color(0xFFD97706),
@@ -103,6 +107,7 @@ fun SummaryCardsSection(
                 title = "Kas Bersih Pemilik",
                 value = FormatUtils.formatRupiah(summary.totalOwnerShare),
                 rawValue = summary.totalOwnerShare,
+                isCurrency = true,
                 unit = "Laba Usaha Steam",
                 icon = Icons.Default.AccountBalance,
                 iconTint = Color(0xFF0D9488),
@@ -114,16 +119,9 @@ fun SummaryCardsSection(
 }
 
 /**
- * KPI card with two lightweight, one-shot animations (no infinite/looping
- * animations, so idle screens cost zero extra frames):
- *  - the money value counts up from its previous displayed value instead of
- *    snapping, using a single [Animatable] driven by a short 280ms tween.
- *  - the card does a tiny scale "pulse" (1f -> 1.04f -> 1f) right after the
- *    value changes, done via graphicsLayer/scale (cheap, GPU-composited)
- *    rather than animating elevation/shadow (expensive to redraw).
- * [rawValue] is optional: pass it for numeric KPIs (Rupiah amounts) to get
- * the count-up; omit it (or leave null) for plain-integer/text KPIs like
- * "Total Motor", which just fade/scale in on change instead.
+ * KPI card with lightweight, one-shot animations:
+ *  - the numeric value counts up smoothly from its previous displayed value
+ *  - the card does a tiny GPU-composited scale pulse (1f -> 1.03f -> 1f) right after value changes
  */
 @Composable
 private fun SummaryKpiCard(
@@ -134,13 +132,10 @@ private fun SummaryKpiCard(
     iconTint: Color,
     bgTint: Color,
     modifier: Modifier = Modifier,
-    rawValue: Long? = null
+    rawValue: Long? = null,
+    isCurrency: Boolean = true
 ) {
-    // One-shot pulse scale: idle at 1f (zero cost), only animates briefly
-    // right after `value` changes. Not a looping animation, so it never
-    // costs a frame while the dashboard is just sitting there.
     val pulseScale = remember { Animatable(1f) }
-    // Count-up target: only meaningful when rawValue is supplied.
     val animatedRaw = remember { Animatable(rawValue?.toFloat() ?: 0f) }
 
     LaunchedEffect(rawValue, value) {
@@ -150,14 +145,17 @@ private fun SummaryKpiCard(
                 animationSpec = tween(durationMillis = 280, easing = EaseOutCubic)
             )
         }
-        // tiny pulse, ~220ms total, then settle back to 1f
         pulseScale.snapTo(1f)
-        pulseScale.animateTo(1.04f, tween(110, easing = EaseOutCubic))
-        pulseScale.animateTo(1f, tween(110, easing = EaseOutCubic))
+        pulseScale.animateTo(1.03f, tween(100, easing = EaseOutCubic))
+        pulseScale.animateTo(1f, tween(100, easing = EaseOutCubic))
     }
 
     val displayValue = if (rawValue != null) {
-        FormatUtils.formatRupiah(animatedRaw.value.roundToLong())
+        if (isCurrency) {
+            FormatUtils.formatRupiah(animatedRaw.value.roundToLong())
+        } else {
+            "${animatedRaw.value.roundToLong()}"
+        }
     } else {
         value
     }
