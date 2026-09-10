@@ -47,6 +47,7 @@ import com.example.data.model.WashRecord
 import com.example.ui.CurrentUser
 import com.example.ui.UserRole
 import com.example.util.FormatUtils
+import com.example.util.coloredShadow
 
 @Composable
 fun TransactionItemCard(
@@ -63,22 +64,33 @@ fun TransactionItemCard(
     val validationState = record.getValidationState()
 
     val cardBorderColor = when (validationState) {
-        ValidationState.DISPUTED -> Color(0xFFF87171)
         ValidationState.PENDING_REVIEW -> Color(0xFFFCD34D)
-        ValidationState.VALID_APPROVED, ValidationState.VALID_AUTO_24H -> MaterialTheme.colorScheme.outlineVariant
+        else -> MaterialTheme.colorScheme.outlineVariant
     }
 
-    val cardBgColor = when (validationState) {
-        ValidationState.DISPUTED -> Color(0xFFFEF2F2)
-        else -> MaterialTheme.colorScheme.surface
+    val shadowColor = when (validationState) {
+        ValidationState.PENDING_REVIEW -> Color(0xFFF59E0B)
+        ValidationState.VALID_APPROVED -> Color(0xFF10B981)
+        else -> Color(0xFF0284C7)
     }
+
+    val cardBgColor = MaterialTheme.colorScheme.surface
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .coloredShadow(
+                color = shadowColor,
+                alpha = 0.30f,
+                borderRadius = 14.dp,
+                shadowRadius = 8.dp,
+                offsetY = 3.dp,
+                elevation = 4.dp
+            ),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = cardBgColor),
         border = BorderStroke(1.dp, cardBorderColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
@@ -100,7 +112,7 @@ fun TransactionItemCard(
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "✓ Valid (Disetujui Manager)",
+                                text = "✓ Valid (Disetujui)",
                                 color = Color(0xFF15803D),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
@@ -136,14 +148,14 @@ fun TransactionItemCard(
                             )
                         }
                     }
-                    ValidationState.DISPUTED -> {
+                    else -> {
                         Surface(
-                            color = Color(0xFFFEE2E2),
+                            color = Color(0xFFDCFCE7),
                             shape = RoundedCornerShape(6.dp)
                         ) {
                             Text(
-                                text = "⚠ Disanggah Manager",
-                                color = Color(0xFFB91C1C),
+                                text = "✓ Valid",
+                                color = Color(0xFF15803D),
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
@@ -157,42 +169,6 @@ fun TransactionItemCard(
                     fontSize = 11.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-
-            // Disputed reason alert box
-            if (validationState == ValidationState.DISPUTED && record.disputeReason.isNotBlank()) {
-                Surface(
-                    color = Color(0xFFFEE2E2),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 8.dp)
-                ) {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = Color(0xFFB91C1C),
-                                modifier = Modifier.size(14.dp)
-                            )
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text(
-                                text = "Sanggahan dari ${record.disputedBy.ifBlank { "Manager Keuangan" }}:",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.sp,
-                                color = Color(0xFF991B1B)
-                            )
-                        }
-                        Text(
-                            text = "\"${record.disputeReason}\"",
-                            fontSize = 12.sp,
-                            color = Color(0xFF7F1D1D),
-                            modifier = Modifier.padding(start = 18.dp, top = 2.dp)
-                        )
-                    }
-                }
             }
 
             // Primary Content Row
@@ -209,18 +185,14 @@ fun TransactionItemCard(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(CircleShape)
-                            .background(
-                                if (validationState == ValidationState.DISPUTED) Color(0xFFFEE2E2)
-                                else MaterialTheme.colorScheme.primaryContainer
-                            ),
+                            .background(MaterialTheme.colorScheme.primaryContainer),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
                             text = "${record.motorCount}x",
                             style = MaterialTheme.typography.labelLarge,
                             fontWeight = FontWeight.Bold,
-                            color = if (validationState == ValidationState.DISPUTED) Color(0xFFDC2626)
-                            else MaterialTheme.colorScheme.primary
+                            color = MaterialTheme.colorScheme.primary
                         )
                     }
 
@@ -363,7 +335,7 @@ fun TransactionItemCard(
                         text = FormatUtils.formatRupiah(record.totalPrice),
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.ExtraBold,
-                        color = if (validationState == ValidationState.DISPUTED) Color(0xFFDC2626) else Color(0xFF2E7D32)
+                        color = Color(0xFF2E7D32)
                     )
                 }
 
@@ -398,9 +370,8 @@ fun TransactionItemCard(
                 }
             }
 
-            // Dispute & validation controls: available to any non-Kasir role
-            // (Manajer Keuangan, Pemilik Usaha, Team IT)
-            if (currentUser.role != UserRole.KASIR) {
+            // Validation controls: available to any non-Kasir role for pending reviews
+            if (currentUser.role != UserRole.KASIR && validationState == ValidationState.PENDING_REVIEW) {
                 HorizontalDivider(
                     modifier = Modifier.padding(top = 8.dp, bottom = 4.dp),
                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
@@ -411,45 +382,13 @@ fun TransactionItemCard(
                     horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (validationState == ValidationState.DISPUTED) {
-                        TextButton(
-                            onClick = { onRevokeDispute(record) },
-                            modifier = Modifier.testTag("btn_revoke_dispute_${record.id}")
-                        ) {
-                            Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Cabut Sanggahan", fontSize = 11.sp)
-                        }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        TextButton(
-                            onClick = { onValidate(record) },
-                            modifier = Modifier.testTag("btn_validate_now_${record.id}")
-                        ) {
-                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sahkan Jadi Valid", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                        }
-                    } else {
-                        if (validationState == ValidationState.PENDING_REVIEW) {
-                            TextButton(
-                                onClick = { onValidate(record) },
-                                modifier = Modifier.testTag("btn_validate_now_${record.id}")
-                            ) {
-                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Validasi Sekarang", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.width(6.dp))
-                        }
-
-                        TextButton(
-                            onClick = { onDispute(record) },
-                            modifier = Modifier.testTag("btn_dispute_${record.id}")
-                        ) {
-                            Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFDC2626), modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Sanggah Data", color = Color(0xFFDC2626), fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                        }
+                    TextButton(
+                        onClick = { onValidate(record) },
+                        modifier = Modifier.testTag("btn_validate_now_${record.id}")
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color(0xFF16A34A), modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Validasi Sekarang", color = Color(0xFF16A34A), fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

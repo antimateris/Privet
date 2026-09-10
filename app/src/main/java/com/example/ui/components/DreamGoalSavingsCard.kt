@@ -52,6 +52,7 @@ import com.example.ui.DreamGoalProgress
 import com.example.ui.SavingsSource
 import com.example.ui.SavingsTargetFor
 import com.example.util.FormatUtils
+import com.example.util.coloredShadow
 import java.util.Locale
 
 @Composable
@@ -75,9 +76,19 @@ fun DreamGoalSavingsCard(
         (progress.progressPercent * 100f).coerceAtLeast(0f)
     }
 
+    val dreamCardShadowColor = if (progress.isAchieved) Color(0xFF16A34A) else Color(0xFFD97706)
+
     Card(
         modifier = modifier
             .fillMaxWidth()
+            .coloredShadow(
+                color = dreamCardShadowColor,
+                alpha = 0.40f,
+                borderRadius = 16.dp,
+                shadowRadius = 8.dp,
+                offsetY = 4.dp,
+                elevation = 6.dp
+            )
             .testTag("dream_goal_savings_card"),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
@@ -85,9 +96,9 @@ fun DreamGoalSavingsCard(
         ),
         border = BorderStroke(
             width = if (progress.isAchieved) 1.5.dp else 1.dp,
-            color = if (progress.isAchieved) Color(0xFF16A34A) else MaterialTheme.colorScheme.outlineVariant
+            color = if (progress.isAchieved) Color(0xFF16A34A) else dreamCardShadowColor.copy(alpha = 0.25f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier

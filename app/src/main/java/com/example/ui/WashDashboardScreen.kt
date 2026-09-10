@@ -76,6 +76,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -111,6 +112,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -131,7 +133,6 @@ import com.example.ui.dialogs.AddEditExpenseDialog
 import com.example.ui.dialogs.AddEditWashDialog
 import com.example.ui.dialogs.AppUpdateCenterDialog
 import com.example.ui.dialogs.CalendarRevenueDialog
-import com.example.ui.dialogs.DisputeTransactionDialog
 import com.example.ui.dialogs.EditDreamGoalDialog
 import com.example.ui.dialogs.EditPastDateRevenueDialog
 import com.example.ui.dialogs.ExportReportDialog
@@ -143,6 +144,7 @@ import com.example.ui.dialogs.TestPushDialog
 import com.example.ui.dialogs.ThermalReceiptDialog
 import com.example.util.ExportUtils
 import com.example.util.FormatUtils
+import com.example.util.coloredShadow
 import com.example.util.TimePeriod
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -204,7 +206,6 @@ fun WashDashboardScreen(
     var expenseToDelete by remember { mutableStateOf<StoreExpense?>(null) }
     var recordForThermalReceipt by remember { mutableStateOf<WashRecord?>(null) }
     var savedRecordForReceiptOption by remember { mutableStateOf<WashRecord?>(null) }
-    var recordForDispute by remember { mutableStateOf<WashRecord?>(null) }
     var targetPastDateMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
     var targetPastSummary by remember { mutableStateOf<DayRevenueSummary?>(null) }
 
@@ -578,8 +579,20 @@ fun WashDashboardScreen(
                         showAddEditDialog = true
                     },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Catat Lengkap") },
-                    modifier = Modifier.testTag("add_custom_wash_fab")
+                    text = { Text("Catat Lengkap", fontWeight = FontWeight.Bold) },
+                    containerColor = Color(0xFF0284C7),
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .coloredShadow(
+                            color = Color(0xFF0284C7),
+                            alpha = 0.55f,
+                            borderRadius = 16.dp,
+                            shadowRadius = 8.dp,
+                            offsetY = 4.dp,
+                            elevation = 8.dp
+                        )
+                        .testTag("add_custom_wash_fab")
                 )
             } else if (currentTab == 1) {
                 ExtendedFloatingActionButton(
@@ -588,8 +601,20 @@ fun WashDashboardScreen(
                         showAddExpenseDialog = true
                     },
                     icon = { Icon(Icons.Default.Add, contentDescription = null) },
-                    text = { Text("Catat Pengeluaran") },
-                    modifier = Modifier.testTag("add_expense_fab")
+                    text = { Text("Catat Pengeluaran", fontWeight = FontWeight.Bold) },
+                    containerColor = Color(0xFFE11D48),
+                    contentColor = Color.White,
+                    elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 0.dp),
+                    modifier = Modifier
+                        .coloredShadow(
+                            color = Color(0xFFE11D48),
+                            alpha = 0.55f,
+                            borderRadius = 16.dp,
+                            shadowRadius = 8.dp,
+                            offsetY = 4.dp,
+                            elevation = 8.dp
+                        )
+                        .testTag("add_expense_fab")
                 )
             }
         }
@@ -630,298 +655,131 @@ fun WashDashboardScreen(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
                     verticalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    // Section: Info Update Terbaru Card
+                    // Section: Bar Mini Bulat Indikator Akun & Siapa yang Aktif
                     item {
-                        if (hasNewUpdate) {
-                            Surface(
-                                color = Color(0xFFEFF6FF),
-                                shape = RoundedCornerShape(14.dp),
-                                border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                        val userRoleColor = when (currentUser.role) {
+                            UserRole.KASIR -> Color(0xFF0284C7)
+                            UserRole.MANAJER_KEUANGAN -> Color(0xFF7C3AED)
+                            UserRole.PEMILIK_USAHA -> Color(0xFFD97706)
+                            UserRole.TEAM_IT -> Color(0xFF16A34A)
+                        }
+
+                        val onlineCount = activeUsers.count { it.isOnlineNow() }.coerceAtLeast(1)
+
+                        Surface(
+                            color = MaterialTheme.colorScheme.surface,
+                            shape = RoundedCornerShape(50),
+                            border = BorderStroke(1.dp, userRoleColor.copy(alpha = 0.35f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .coloredShadow(
+                                    color = userRoleColor,
+                                    alpha = 0.22f,
+                                    borderRadius = 24.dp,
+                                    shadowRadius = 6.dp,
+                                    offsetY = 2.dp,
+                                    elevation = 3.dp
+                                )
+                                .testTag("active_user_status_banner")
+                        ) {
+                            Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .clickable { showAppUpdateDialog = true }
-                                    .testTag("in_app_update_banner")
+                                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
+                                // Sisi Kiri: Indikator Dot + Info Akun Aktif
                                 Row(
-                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(40.dp)
-                                                .clip(RoundedCornerShape(10.dp))
-                                                .background(Color(0xFF2563EB)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Icon(
-                                                imageVector = Icons.Default.RocketLaunch,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(22.dp)
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Column {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "Info Update Terbaru: v${appUpdateInfo.latestVersionName}",
-                                                    fontWeight = FontWeight.Bold,
-                                                    fontSize = 13.sp,
-                                                    color = Color(0xFF1E3A8A)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = Color(0xFFFF3B30)
-                                                ) {
-                                                    Text(
-                                                        text = "BARU",
-                                                        fontSize = 9.sp,
-                                                        color = Color.White,
-                                                        fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = if (appUpdateInfo.releaseNotes.isNotBlank()) {
-                                                    appUpdateInfo.releaseNotes.lines().firstOrNull()?.take(50) ?: "Pembaruan versi terbaru tersedia"
-                                                } else {
-                                                    "Ketuk untuk unduh & pasang APK terbaru"
-                                                },
-                                                fontSize = 11.sp,
-                                                color = Color(0xFF3B82F6),
-                                                maxLines = 1
-                                            )
-                                        }
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Surface(
-                                        shape = RoundedCornerShape(8.dp),
-                                        color = Color(0xFF2563EB)
-                                    ) {
-                                        Text(
-                                            text = "Update",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                        )
-                                    }
-                                }
-                            }
-                        } else {
-                            Surface(
-                                color = Color(0xFFF8FAFC),
-                                shape = RoundedCornerShape(12.dp),
-                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable { showAppUpdateDialog = true }
-                                    .testTag("latest_app_info_card")
-                            ) {
-                                Row(
                                     modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically
+                                        .weight(1f)
+                                        .clickable { showSwitchUserDialog = true }
                                 ) {
                                     Box(
                                         modifier = Modifier
-                                            .size(34.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(Color(0xFFE0F2FE)),
-                                        contentAlignment = Alignment.Center
+                                            .size(9.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF22C55E))
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Icon(
+                                        imageVector = Icons.Default.AccountCircle,
+                                        contentDescription = null,
+                                        tint = userRoleColor,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "${currentUser.name} • ${currentUser.role.title}",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                // Sisi Kanan: Siapa yang Aktif & Tombol Ganti Cepat
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Surface(
+                                        color = Color(0xFFDCFCE7),
+                                        shape = RoundedCornerShape(50),
+                                        modifier = Modifier
+                                            .clickable {
+                                                viewModel.refreshActiveUsers()
+                                                showActiveUsersDialog = true
+                                            }
+                                            .testTag("who_is_active_button")
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(6.dp)
+                                                    .clip(CircleShape)
+                                                    .background(Color(0xFF16A34A))
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "$onlineCount Aktif",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color(0xFF15803D)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.width(4.dp))
+
+                                    IconButton(
+                                        onClick = { showSwitchUserDialog = true },
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .testTag("switch_user_button")
                                     ) {
                                         Icon(
-                                            imageVector = Icons.Default.SystemUpdate,
-                                            contentDescription = null,
-                                            tint = Color(0xFF0284C7),
-                                            modifier = Modifier.size(18.dp)
+                                            imageVector = Icons.Default.Sync,
+                                            contentDescription = "Ganti Akun",
+                                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            modifier = Modifier.size(16.dp)
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(10.dp))
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Info Update Terbaru: v${com.example.BuildConfig.VERSION_NAME}",
-                                                fontWeight = FontWeight.SemiBold,
-                                                fontSize = 12.sp,
-                                                color = Color(0xFF0F172A)
-                                            )
-                                            Spacer(modifier = Modifier.width(6.dp))
-                                            Surface(
-                                                shape = RoundedCornerShape(4.dp),
-                                                color = Color(0xFFDCFCE7)
-                                            ) {
-                                                Text(
-                                                    text = "Versi Terbaru",
-                                                    fontSize = 9.sp,
-                                                    color = Color(0xFF15803D),
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                )
-                                            }
-                                        }
-                                        Spacer(modifier = Modifier.height(1.dp))
-                                        Text(
-                                            text = "Sistem mutakhir • Ketuk untuk riwayat rilis",
-                                            fontSize = 11.sp,
-                                            color = Color(0xFF64748B)
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                                        contentDescription = "Buka Info",
-                                        tint = Color(0xFF94A3B8),
-                                        modifier = Modifier.size(14.dp)
-                                    )
                                 }
                             }
                         }
                     }
-
-                // Section: Active User Account Status
-                item {
-                    Surface(
-                        color = when (currentUser.role) {
-                            UserRole.KASIR -> Color(0xFFF0F9FF)
-                            UserRole.MANAJER_KEUANGAN -> Color(0xFFF5F3FF)
-                            UserRole.PEMILIK_USAHA -> Color(0xFFFFFBEB)
-                            UserRole.TEAM_IT -> Color(0xFFF0FDF4)
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(
-                            1.dp,
-                            when (currentUser.role) {
-                                UserRole.KASIR -> Color(0xFFBAE6FD)
-                                UserRole.MANAJER_KEUANGAN -> Color(0xFFDDD6FE)
-                                UserRole.PEMILIK_USAHA -> Color(0xFFFDE68A)
-                                UserRole.TEAM_IT -> Color(0xFFBBF7D0)
-                            }
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("active_user_status_banner")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.AccountCircle,
-                                    contentDescription = null,
-                                    tint = when (currentUser.role) {
-                                        UserRole.KASIR -> Color(0xFF0284C7)
-                                        UserRole.MANAJER_KEUANGAN -> Color(0xFF7C3AED)
-                                        UserRole.PEMILIK_USAHA -> Color(0xFFD97706)
-                                        UserRole.TEAM_IT -> Color(0xFF16A34A)
-                                    },
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column {
-                                    Text(
-                                        text = "${currentUser.name} (${currentUser.role.title})",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = currentUser.role.subtitle,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        fontSize = 10.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(
-                                    onClick = {
-                                        viewModel.refreshActiveUsers()
-                                        showActiveUsersDialog = true
-                                    },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                    modifier = Modifier.testTag("who_is_active_button")
-                                ) {
-                                    Text(
-                                        "Siapa Aktif (${activeUsers.count { it.isOnlineNow() }})",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = Color(0xFF16A34A)
-                                    )
-                                }
-                                TextButton(
-                                    onClick = { showSwitchUserDialog = true },
-                                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 2.dp),
-                                    modifier = Modifier.testTag("switch_user_button")
-                                ) {
-                                    Text("Ganti", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Disputed Alert Banner (if any disputed transactions exist)
-                if (financialSummary.disputedMotors > 0) {
-                    item {
-                        Surface(
-                            color = Color(0xFFFEF2F2),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, Color(0xFFFCA5A5)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .testTag("disputed_alert_banner")
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.Warning,
-                                    contentDescription = null,
-                                    tint = Color(0xFFDC2626),
-                                    modifier = Modifier.size(24.dp)
-                                )
-                                Spacer(modifier = Modifier.width(10.dp))
-                                Column {
-                                    Text(
-                                        text = "Perhatian: ${financialSummary.disputedMotors} Transaksi Disanggah Manager",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 12.sp,
-                                        color = Color(0xFF991B1B)
-                                    )
-                                    Text(
-                                        text = "Total Rp ${FormatUtils.formatRupiah(financialSummary.disputedAmount)} belum sah dan memerlukan peninjauan kembali.",
-                                        fontSize = 11.sp,
-                                        color = Color(0xFF7F1D1D)
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
 
                 // Section: Live Device Date & Past Date Status Card
                 item {
                     val isPastDate = selectedPeriod == TimePeriod.TANGGAL_PILIHAN && !FormatUtils.isToday(selectedDateMillis)
+                    val dateCardShadowColor = if (isPastDate) Color(0xFFD97706) else MaterialTheme.colorScheme.primary
+
                     Card(
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
@@ -931,8 +789,17 @@ fun WashDashboardScreen(
                             1.dp,
                             if (isPastDate) Color(0xFFF59E0B) else MaterialTheme.colorScheme.outlineVariant
                         ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .coloredShadow(
+                                color = dateCardShadowColor,
+                                alpha = if (isPastDate) 0.45f else 0.35f,
+                                borderRadius = 16.dp,
+                                shadowRadius = 8.dp,
+                                offsetY = 4.dp,
+                                elevation = 6.dp
+                            )
                     ) {
                         Column(
                             modifier = Modifier
@@ -1049,10 +916,18 @@ fun WashDashboardScreen(
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
-                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
                         modifier = Modifier
                             .fillMaxWidth()
+                            .coloredShadow(
+                                color = MaterialTheme.colorScheme.secondary,
+                                alpha = 0.38f,
+                                borderRadius = 16.dp,
+                                shadowRadius = 8.dp,
+                                offsetY = 4.dp,
+                                elevation = 6.dp
+                            )
                             .testTag("banner_to_analysis")
                     ) {
                         Row(
@@ -1108,13 +983,22 @@ fun WashDashboardScreen(
                 // Section 1: Quick Action Bar
             item {
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .coloredShadow(
+                            color = MaterialTheme.colorScheme.primary,
+                            alpha = 0.38f,
+                            borderRadius = 16.dp,
+                            shadowRadius = 8.dp,
+                            offsetY = 4.dp,
+                            elevation = 6.dp
+                        ),
                     shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(
                         modifier = Modifier
@@ -1206,7 +1090,15 @@ fun WashDashboardScreen(
                                 },
                                 modifier = Modifier
                                     .weight(1.5f)
+                                    .coloredShadow(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        alpha = 0.50f,
+                                        borderRadius = 12.dp,
+                                        elevation = 5.dp,
+                                        offsetY = 3.dp
+                                    )
                                     .testTag("quick_add_1_motor_button"),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 0.dp),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
@@ -1228,6 +1120,13 @@ fun WashDashboardScreen(
                                 },
                                 modifier = Modifier
                                     .weight(1f)
+                                    .coloredShadow(
+                                        color = MaterialTheme.colorScheme.primary,
+                                        alpha = 0.18f,
+                                        borderRadius = 12.dp,
+                                        elevation = 2.dp,
+                                        offsetY = 2.dp
+                                    )
                                     .testTag("quick_add_2_motor_button"),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -1351,13 +1250,21 @@ fun WashDashboardScreen(
                     Card(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 16.dp),
+                            .padding(vertical = 16.dp)
+                            .coloredShadow(
+                                color = MaterialTheme.colorScheme.primary,
+                                alpha = 0.20f,
+                                borderRadius = 16.dp,
+                                shadowRadius = 8.dp,
+                                offsetY = 3.dp,
+                                elevation = 4.dp
+                            ),
                         shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(
                             containerColor = MaterialTheme.colorScheme.surface
                         ),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(
                             modifier = Modifier
@@ -1435,16 +1342,9 @@ fun WashDashboardScreen(
                         onPrintReceipt = {
                             recordForThermalReceipt = it
                         },
-                        onDispute = {
-                            recordForDispute = it
-                        },
                         onValidate = {
                             viewModel.validateTransaction(it)
                             Toast.makeText(context, "Transaksi disahkan menjadi VALID", Toast.LENGTH_SHORT).show()
-                        },
-                        onRevokeDispute = {
-                            viewModel.revokeDispute(it)
-                            Toast.makeText(context, "Sanggahan dicabut", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
@@ -1760,25 +1660,6 @@ fun WashDashboardScreen(
         ThermalReceiptDialog(
             record = recordForThermalReceipt!!,
             onDismiss = { recordForThermalReceipt = null }
-        )
-    }
-
-    // Dialog: Sanggah Transaksi (Manager Keuangan / Pemilik)
-    if (recordForDispute != null) {
-        DisputeTransactionDialog(
-            record = recordForDispute!!,
-            managerName = currentUser.name,
-            onDismiss = { recordForDispute = null },
-            onConfirmDispute = { reason ->
-                val target = recordForDispute
-                if (target != null) {
-                    viewModel.disputeTransaction(target, reason)
-                    recordForDispute = null
-                    coroutineScope.launch {
-                        snackbarHostState.showSnackbar("Transaksi telah disanggah dan ditandai tidak sesuai")
-                    }
-                }
-            }
         )
     }
 

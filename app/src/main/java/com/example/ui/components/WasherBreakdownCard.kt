@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.WasherShareBreakdown
 import com.example.util.FormatUtils
+import com.example.util.coloredShadow
 
 @Composable
 fun WasherBreakdownCard(
@@ -52,13 +53,22 @@ fun WasherBreakdownCard(
     if (breakdowns.isEmpty()) return
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .coloredShadow(
+                color = Color(0xFFD97706),
+                alpha = 0.40f,
+                borderRadius = 16.dp,
+                shadowRadius = 8.dp,
+                offsetY = 4.dp,
+                elevation = 6.dp
+            ),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        border = BorderStroke(1.dp, Color(0xFFD97706).copy(alpha = 0.25f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier

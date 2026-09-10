@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.WashFinancialSummary
 import com.example.util.FormatUtils
+import com.example.util.coloredShadow
 import kotlin.math.roundToLong
 
 @Composable
@@ -161,13 +162,22 @@ private fun SummaryKpiCard(
     }
 
     Card(
-        modifier = modifier.scale(pulseScale.value),
+        modifier = modifier
+            .coloredShadow(
+                color = iconTint,
+                alpha = 0.42f,
+                borderRadius = 16.dp,
+                shadowRadius = 8.dp,
+                offsetY = 4.dp,
+                elevation = 6.dp
+            )
+            .scale(pulseScale.value),
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        border = BorderStroke(1.dp, iconTint.copy(alpha = 0.25f)),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
         Column(
             modifier = Modifier
