@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class WashFinancialSummary(
     val totalMotors: Int = 0,
@@ -874,24 +875,33 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
 
-            // Automatic Periodic Sync every 5 minutes (Auto-sync 5 menit)
-            viewModelScope.launch(Dispatchers.IO) {
-                while (isActive) {
-                    delay(5 * 60 * 1000L) // 5 minutes
-                    try {
-                        val records = repository.getAllRecords().first()
-                        if (records.isNotEmpty()) {
-                            firestoreRepository.batchUploadLocalRecords(records)
-                            val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date())
-                            _cloudSyncStatus.value = "Auto-sync 5 mnt • Terakhir: $timeStr"
-                        }
-                    } catch (_: Exception) {
-                        // Ignore transient network failures
-                    }
-                }
-            }
+            // Removed periodic 5-minute sync as requested by user. Real-time sync on order/expense input remains active.
         } else {
             _cloudSyncStatus.value = "Data tersimpan di HP (Offline)"
+        }
+    }
+
+    /**
+     * Pull-to-refresh action: uploads local unsynced records to cloud and updates active users.
+     */
+    fun refreshAllData(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                if (firestoreRepository.isAvailable()) {
+                    val records = repository.getAllRecords().first()
+                    if (records.isNotEmpty()) {
+                        firestoreRepository.batchUploadLocalRecords(records)
+                    }
+                }
+                refreshActiveUsers()
+                withContext(Dispatchers.Main) {
+                    onComplete(true, "Data berhasil diperbarui")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) {
+                    onComplete(false, "Penyegaran selesai: ${e.message ?: "Offline"}")
+                }
+            }
         }
     }
 

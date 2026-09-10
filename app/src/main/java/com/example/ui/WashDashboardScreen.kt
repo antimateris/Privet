@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.BarChart
@@ -84,6 +85,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -254,7 +256,7 @@ fun WashDashboardScreen(
                 actions = {
                     val onlineUsersCount = activeUsers.count { it.isOnlineNow() }
 
-                    // In-App Update Center Button (Highlights when an update is available)
+                    // Pusat Pembaruan Aplikasi (Highlights when an update is available)
                     IconButton(
                         onClick = { showAppUpdateDialog = true },
                         modifier = Modifier.testTag("appbar_update_center_button")
@@ -270,99 +272,10 @@ fun WashDashboardScreen(
                         ) {
                             Icon(
                                 imageVector = Icons.Default.SystemUpdate,
-                                contentDescription = "Pusat Pembaruan Aplikasi",
+                                contentDescription = "Info Update Terbaru",
                                 tint = if (hasNewUpdate) Color(0xFFFF9500) else MaterialTheme.colorScheme.onSurface
                             )
                         }
-                    }
-
-                    // Active Users Status Dialog Button with Live Online Badge
-                    IconButton(
-                        onClick = {
-                            viewModel.refreshActiveUsers()
-                            showActiveUsersDialog = true
-                        },
-                        modifier = Modifier.testTag("appbar_active_users_button")
-                    ) {
-                        BadgedBox(
-                            badge = {
-                                if (onlineUsersCount > 0) {
-                                    Badge(containerColor = Color(0xFF16A34A)) {
-                                        Text("$onlineUsersCount", fontSize = 9.sp, color = Color.White)
-                                    }
-                                }
-                            }
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.People,
-                                contentDescription = "Siapa yang Sedang Aktif",
-                                tint = MaterialTheme.colorScheme.onSurface
-                            )
-                        }
-                    }
-
-                    // Test Push Notifikasi ke Semua Orang
-                    IconButton(
-                        onClick = { showTestPushDialog = true },
-                        modifier = Modifier.testTag("appbar_test_push_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.NotificationsActive,
-                            contentDescription = "Test Push Notifikasi",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    // Ekspor Laporan Dialog Button
-                    IconButton(
-                        onClick = { showExportDialog = true },
-                        modifier = Modifier.testTag("appbar_export_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Description,
-                            contentDescription = "Ekspor Laporan (CSV / WA)"
-                        )
-                    }
-
-                    // Calendar & Rekap Button
-                    IconButton(
-                        onClick = { showCalendarDialog = true },
-                        modifier = Modifier.testTag("appbar_calendar_button")
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.CalendarMonth,
-                            contentDescription = "Kalender & Rekap Omset"
-                        )
-                    }
-
-                    // WhatsApp Share
-                    IconButton(
-                        onClick = {
-                            val text = when (currentTab) {
-                                0 -> viewModel.buildWhatsAppReportText()
-                                1 -> viewModel.buildMonthlyReportWhatsAppText(monthlySummary)
-                                2 -> viewModel.buildRevenueAnalysisShareText()
-                                else -> viewModel.buildDreamGoalShareText()
-                            }
-                            val sendIntent = Intent().apply {
-                                action = Intent.ACTION_SEND
-                                putExtra(Intent.EXTRA_TEXT, text)
-                                type = "text/plain"
-                            }
-                            val shareIntent = Intent.createChooser(sendIntent, "Bagikan Informasi Steam Motor")
-                            context.startActivity(shareIntent)
-                        },
-                        modifier = Modifier.testTag("share_whatsapp_button")
-                    ) {
-                        Icon(Icons.Default.Share, contentDescription = "Bagikan Laporan")
-                    }
-
-                    // Team/Workers Dialog
-                    IconButton(
-                        onClick = { showWorkersDialog = true },
-                        modifier = Modifier.testTag("manage_workers_button")
-                    ) {
-                        Icon(Icons.Default.Group, contentDescription = "Kelola Petugas")
                     }
 
                     // User Profile / Role Switcher
@@ -382,8 +295,11 @@ fun WashDashboardScreen(
                         )
                     }
 
-                    // More Menu
-                    IconButton(onClick = { showMenu = true }) {
+                    // More Menu Button
+                    IconButton(
+                        onClick = { showMenu = true },
+                        modifier = Modifier.testTag("appbar_more_menu_button")
+                    ) {
                         Icon(Icons.Default.MoreVert, contentDescription = "Menu")
                     }
 
@@ -392,20 +308,9 @@ fun WashDashboardScreen(
                         onDismissRequest = { showMenu = false }
                     ) {
                         DropdownMenuItem(
-                            text = { Text("Siapa yang Sedang Aktif (${activeUsers.count { it.isOnlineNow() }} Online)") },
-                            leadingIcon = { Icon(Icons.Default.People, contentDescription = null, tint = Color(0xFF16A34A)) },
-                            onClick = {
-                                showMenu = false
-                                viewModel.refreshActiveUsers()
-                                showActiveUsersDialog = true
-                            },
-                            modifier = Modifier.testTag("menu_active_users")
-                        )
-
-                        DropdownMenuItem(
                             text = {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Pusat Pembaruan Aplikasi")
+                                    Text("Info Update Terbaru")
                                     if (hasNewUpdate) {
                                         Spacer(modifier = Modifier.width(6.dp))
                                         Surface(
@@ -435,6 +340,79 @@ fun WashDashboardScreen(
                                 showAppUpdateDialog = true
                             },
                             modifier = Modifier.testTag("menu_app_update_center")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Siapa yang Sedang Aktif (${activeUsers.count { it.isOnlineNow() }} Online)") },
+                            leadingIcon = { Icon(Icons.Default.People, contentDescription = null, tint = Color(0xFF16A34A)) },
+                            onClick = {
+                                showMenu = false
+                                viewModel.refreshActiveUsers()
+                                showActiveUsersDialog = true
+                            },
+                            modifier = Modifier.testTag("menu_active_users")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Kelola Petugas") },
+                            leadingIcon = { Icon(Icons.Default.Group, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = {
+                                showMenu = false
+                                showWorkersDialog = true
+                            },
+                            modifier = Modifier.testTag("manage_workers_button")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Kalender & Rekap Omset") },
+                            leadingIcon = { Icon(Icons.Default.CalendarMonth, contentDescription = null, tint = Color(0xFF0284C7)) },
+                            onClick = {
+                                showMenu = false
+                                showCalendarDialog = true
+                            },
+                            modifier = Modifier.testTag("appbar_calendar_button")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Ekspor Laporan (CSV / WA)") },
+                            leadingIcon = { Icon(Icons.Default.Description, contentDescription = null, tint = Color(0xFF0F172A)) },
+                            onClick = {
+                                showMenu = false
+                                showExportDialog = true
+                            },
+                            modifier = Modifier.testTag("appbar_export_button")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Bagikan Laporan ke WhatsApp") },
+                            leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = Color(0xFF25D366)) },
+                            onClick = {
+                                showMenu = false
+                                val text = when (currentTab) {
+                                    0 -> viewModel.buildWhatsAppReportText()
+                                    1 -> viewModel.buildMonthlyReportWhatsAppText(monthlySummary)
+                                    2 -> viewModel.buildRevenueAnalysisShareText()
+                                    else -> viewModel.buildDreamGoalShareText()
+                                }
+                                val sendIntent = Intent().apply {
+                                    action = Intent.ACTION_SEND
+                                    putExtra(Intent.EXTRA_TEXT, text)
+                                    type = "text/plain"
+                                }
+                                val shareIntent = Intent.createChooser(sendIntent, "Bagikan Informasi Steam Motor")
+                                context.startActivity(shareIntent)
+                            },
+                            modifier = Modifier.testTag("share_whatsapp_button")
+                        )
+
+                        DropdownMenuItem(
+                            text = { Text("Test Push Notifikasi") },
+                            leadingIcon = { Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+                            onClick = {
+                                showMenu = false
+                                showTestPushDialog = true
+                            },
+                            modifier = Modifier.testTag("appbar_test_push_button")
                         )
 
                         DropdownMenuItem(
@@ -620,178 +598,181 @@ fun WashDashboardScreen(
             label = "dashboard_tab_content"
         ) { tab ->
         if (tab == 0) {
-            LazyColumn(
+            var isRefreshing by remember { mutableStateOf(false) }
+
+            PullToRefreshBox(
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    isRefreshing = true
+                    viewModel.refreshAllData { _, _ ->
+                        isRefreshing = false
+                    }
+                },
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(innerPadding),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                    .padding(innerPadding)
             ) {
-                // Section: Cloud Sync Status Banner (Real-time Firebase)
-                item {
-                    val isCloudActive = cloudSyncStatus.contains("aktif", ignoreCase = true) || cloudSyncStatus.contains("Tersinkron", ignoreCase = true)
-                    val bannerBg = if (isCloudActive) Color(0xFFF0FDF4) else Color(0xFFF1F5F9)
-                    val bannerBorder = if (isCloudActive) Color(0xFF86EFAC) else Color(0xFFCBD5E1)
-                    val bannerDot = if (isCloudActive) Color(0xFF16A34A) else Color(0xFF64748B)
-                    val bannerText = if (isCloudActive) Color(0xFF166534) else Color(0xFF334155)
-
-                    Surface(
-                        color = bannerBg,
-                        shape = RoundedCornerShape(12.dp),
-                        border = BorderStroke(1.dp, bannerBorder),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .testTag("cloud_sync_banner")
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            val infiniteTransition = rememberInfiniteTransition(label = "cloud_pulse")
-                            val pulseAlpha by if (isCloudActive) {
-                                infiniteTransition.animateFloat(
-                                    initialValue = 0.4f,
-                                    targetValue = 1.0f,
-                                    animationSpec = infiniteRepeatable(
-                                        animation = tween(1200, easing = LinearEasing),
-                                        repeatMode = RepeatMode.Reverse
-                                    ),
-                                    label = "pulse_alpha"
-                                )
-                            } else {
-                                remember { mutableFloatStateOf(1f) }
-                            }
-
-                            Box(
-                                modifier = Modifier
-                                    .size(9.dp)
-                                    .clip(CircleShape)
-                                    .background(bannerDot.copy(alpha = pulseAlpha))
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = cloudSyncStatus,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = bannerText,
-                                fontWeight = FontWeight.Medium,
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(
-                                onClick = {
-                                    viewModel.syncAllLocalToCloud { _, msg ->
-                                        coroutineScope.launch {
-                                            snackbarHostState.showSnackbar(msg)
-                                        }
-                                    }
-                                },
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                modifier = Modifier.testTag("cloud_sync_now_button")
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        imageVector = Icons.Default.Sync,
-                                        contentDescription = null,
-                                        tint = bannerText,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(4.dp))
-                                    Text(
-                                        "Sinkronkan",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = bannerText
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Section: In-App Update Alert Card (If a newer version exists)
-                if (hasNewUpdate) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Section: Info Update Terbaru Card
                     item {
-                        Surface(
-                            color = Color(0xFFE8F2FF),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, Color(0xFF007AFF).copy(alpha = 0.5f)),
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { showAppUpdateDialog = true }
-                                .testTag("in_app_update_banner")
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                        if (hasNewUpdate) {
+                            Surface(
+                                color = Color(0xFFEFF6FF),
+                                shape = RoundedCornerShape(14.dp),
+                                border = BorderStroke(1.dp, Color(0xFF3B82F6)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showAppUpdateDialog = true }
+                                    .testTag("in_app_update_banner")
                             ) {
                                 Row(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                                     verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.weight(1f)
+                                    horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(38.dp)
-                                            .clip(RoundedCornerShape(10.dp))
-                                            .background(Color(0xFF007AFF)),
-                                        contentAlignment = Alignment.Center
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
                                     ) {
-                                        Icon(
-                                            imageVector = Icons.Default.RocketLaunch,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Pembaruan v${appUpdateInfo.latestVersionName} Siap!",
-                                                fontWeight = FontWeight.Bold,
-                                                fontSize = 13.sp,
-                                                color = Color(0xFF004085)
+                                        Box(
+                                            modifier = Modifier
+                                                .size(40.dp)
+                                                .clip(RoundedCornerShape(10.dp))
+                                                .background(Color(0xFF2563EB)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.RocketLaunch,
+                                                contentDescription = null,
+                                                tint = Color.White,
+                                                modifier = Modifier.size(22.dp)
                                             )
-                                            if (appUpdateInfo.isForceUpdate) {
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Info Update Terbaru: v${appUpdateInfo.latestVersionName}",
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    color = Color(0xFF1E3A8A)
+                                                )
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
                                                     color = Color(0xFFFF3B30)
                                                 ) {
                                                     Text(
-                                                        text = "Wajib",
+                                                        text = "BARU",
                                                         fontSize = 9.sp,
                                                         color = Color.White,
                                                         fontWeight = FontWeight.Bold,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                                                     )
                                                 }
                                             }
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = if (appUpdateInfo.releaseNotes.isNotBlank()) {
+                                                    appUpdateInfo.releaseNotes.lines().firstOrNull()?.take(50) ?: "Pembaruan versi terbaru tersedia"
+                                                } else {
+                                                    "Ketuk untuk unduh & pasang APK terbaru"
+                                                },
+                                                fontSize = 11.sp,
+                                                color = Color(0xFF3B82F6),
+                                                maxLines = 1
+                                            )
                                         }
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(8.dp),
+                                        color = Color(0xFF2563EB)
+                                    ) {
                                         Text(
-                                            text = "Dirilis oleh ${appUpdateInfo.releasedBy} • Ketuk untuk unduh APK langsung",
+                                            text = "Update",
                                             fontSize = 11.sp,
-                                            color = Color(0xFF1E3A8A)
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.White,
+                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                         )
                                     }
                                 }
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = Color(0xFF007AFF)
+                            }
+                        } else {
+                            Surface(
+                                color = Color(0xFFF8FAFC),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE2E8F0)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showAppUpdateDialog = true }
+                                    .testTag("latest_app_info_card")
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(
-                                        text = "Unduh",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White,
-                                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                                    Box(
+                                        modifier = Modifier
+                                            .size(34.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(Color(0xFFE0F2FE)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.SystemUpdate,
+                                            contentDescription = null,
+                                            tint = Color(0xFF0284C7),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Info Update Terbaru: v${com.example.BuildConfig.VERSION_NAME}",
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 12.sp,
+                                                color = Color(0xFF0F172A)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = Color(0xFFDCFCE7)
+                                            ) {
+                                                Text(
+                                                    text = "Versi Terbaru",
+                                                    fontSize = 9.sp,
+                                                    color = Color(0xFF15803D),
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(1.dp))
+                                        Text(
+                                            text = "Sistem mutakhir • Ketuk untuk riwayat rilis",
+                                            fontSize = 11.sp,
+                                            color = Color(0xFF64748B)
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                                        contentDescription = "Buka Info",
+                                        tint = Color(0xFF94A3B8),
+                                        modifier = Modifier.size(14.dp)
                                     )
                                 }
                             }
                         }
                     }
-                }
 
                 // Section: Active User Account Status
                 item {
@@ -1460,6 +1441,7 @@ fun WashDashboardScreen(
             item {
                 Spacer(modifier = Modifier.height(72.dp))
             }
+        }
         }
     } else if (tab == 1) {
         ExpenseScreen(
