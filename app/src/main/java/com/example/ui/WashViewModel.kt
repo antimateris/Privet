@@ -886,6 +886,7 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
      */
     fun refreshAllData(onComplete: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch(Dispatchers.IO) {
+            val startTime = System.currentTimeMillis()
             try {
                 if (firestoreRepository.isAvailable()) {
                     val records = repository.getAllRecords().first()
@@ -894,10 +895,18 @@ class WashViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
                 refreshActiveUsers()
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed < 800) {
+                    delay(800 - elapsed)
+                }
                 withContext(Dispatchers.Main) {
                     onComplete(true, "Data berhasil diperbarui")
                 }
             } catch (e: Exception) {
+                val elapsed = System.currentTimeMillis() - startTime
+                if (elapsed < 600) {
+                    delay(600 - elapsed)
+                }
                 withContext(Dispatchers.Main) {
                     onComplete(false, "Penyegaran selesai: ${e.message ?: "Offline"}")
                 }

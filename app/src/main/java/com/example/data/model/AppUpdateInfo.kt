@@ -5,8 +5,8 @@ package com.example.data.model
  * Synced across all devices via Firebase Firestore in real-time.
  */
 data class AppUpdateInfo(
-    val latestVersionCode: Long = 3L,
-    val latestVersionName: String = "1.2.0",
+    val latestVersionCode: Long = 5L,
+    val latestVersionName: String = "1.4.0",
     val downloadUrl: String = "",
     val releaseNotes: String = "",
     val isForceUpdate: Boolean = false,

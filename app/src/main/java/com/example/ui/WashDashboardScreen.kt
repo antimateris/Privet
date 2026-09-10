@@ -86,6 +86,8 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -599,6 +601,7 @@ fun WashDashboardScreen(
         ) { tab ->
         if (tab == 0) {
             var isRefreshing by remember { mutableStateOf(false) }
+            val refreshState = rememberPullToRefreshState()
 
             PullToRefreshBox(
                 isRefreshing = isRefreshing,
@@ -607,6 +610,16 @@ fun WashDashboardScreen(
                     viewModel.refreshAllData { _, _ ->
                         isRefreshing = false
                     }
+                },
+                state = refreshState,
+                indicator = {
+                    PullToRefreshDefaults.Indicator(
+                        state = refreshState,
+                        isRefreshing = isRefreshing,
+                        modifier = Modifier.align(Alignment.TopCenter),
+                        containerColor = Color.White,
+                        color = Color(0xFF0284C7)
+                    )
                 },
                 modifier = Modifier
                     .fillMaxSize()
